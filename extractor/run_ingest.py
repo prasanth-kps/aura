@@ -46,6 +46,24 @@ def main() -> None:
         action="store_true",
         help="Delete existing memory/crops for this video before ingestion",
     )
+    parser.add_argument(
+        "--track-max-gap",
+        type=int,
+        default=3,
+        help="Max seconds a track can be unmatched before expiring",
+    )
+    parser.add_argument(
+        "--track-iou-threshold",
+        type=float,
+        default=0.20,
+        help="Minimum IoU to match detection to existing track",
+    )
+    parser.add_argument(
+        "--track-center-dist-ratio",
+        type=float,
+        default=0.12,
+        help="Max center-distance/diagonal ratio to match existing track",
+    )
 
     args = parser.parse_args()
 
@@ -66,6 +84,9 @@ def main() -> None:
         include_labels=include_labels,
         exclude_labels=exclude_labels,
         reset_output=args.reset_output,
+        track_max_gap_seconds=args.track_max_gap,
+        track_iou_threshold=args.track_iou_threshold,
+        track_center_dist_ratio=args.track_center_dist_ratio,
     )
 
     summary = run_video_ingestion(options)
