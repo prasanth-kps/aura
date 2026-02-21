@@ -1,0 +1,27 @@
+# ============================================================
+# Edge AI Image Summarizer — Dependencies
+# ============================================================
+# IMPORTANT: Use x64 (AMD64) Python on Snapdragon X Elite.
+#            ARM64 Python will NOT work with qai-hub-models.
+# ============================================================
+
+# --- UI Framework ---
+PyQt6>=6.6.0
+
+# --- Image Processing ---
+Pillow>=10.0.0
+numpy>=1.24.0
+
+# --- AI / Inference ---
+onnxruntime>=1.17.0          # CPU fallback runtime
+# onnxruntime-qnn             # Install separately on Snapdragon devices for NPU support
+torch>=2.1.0                  # For model export only (not needed at inference time)
+torchvision>=0.16.0           # For model export only
+transformers>=4.36.0          # For loading BLIP / CLIP from HuggingFace
+
+# --- Qualcomm AI Hub (for model export/compilation) ---
+qai-hub>=0.15.0
+qai-hub-models>=0.12.0
+
+# --- Utilities ---
+scipy>=1.11.0                 # For cosine similarity
