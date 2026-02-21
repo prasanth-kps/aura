@@ -1,0 +1,4 @@
+numpy
+opencv-python
+torch
+qai-hub-models[yolov11-det,yolov8-det]
