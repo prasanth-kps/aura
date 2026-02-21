@@ -10,7 +10,7 @@ import cv2
 
 from .anchors import ANCHOR_CLASSES
 from .detector_qaihub import QualcommYoloDetector
-from .geometry import choose_anchor, relation_to_anchor
+from .geometry import box_iou, center_distance, choose_anchor, relation_to_anchor
 from .storage import append_event, prepare_output_paths, slugify, write_thumbnail
 
 
@@ -28,6 +28,120 @@ class IngestOptions:
     include_labels: Optional[set[str]] = None
     exclude_labels: set[str] = field(default_factory=set)
     reset_output: bool = False
+    track_max_gap_seconds: int = 3
+    track_iou_threshold: float = 0.20
+    track_center_dist_ratio: float = 0.12
+
+
+@dataclass
+class TrackState:
+    instance_id: str
+    label: str
+    bbox: tuple[int, int, int, int]
+    last_second: int
+    hit_count: int = 1
+
+
+def _new_instance_id(label: str, counters: dict[str, int]) -> str:
+    idx = counters.get(label, 0) + 1
+    counters[label] = idx
+    return f"{slugify(label)}_{idx:03d}"
+
+
+def _prune_stale_tracks(
+    tracks: dict[str, list[TrackState]],
+    second: int,
+    max_gap_seconds: int,
+) -> None:
+    for label in list(tracks.keys()):
+        alive = [
+            track
+            for track in tracks[label]
+            if (second - track.last_second) <= max_gap_seconds
+        ]
+        if alive:
+            tracks[label] = alive
+        else:
+            del tracks[label]
+
+
+def _match_to_existing_track(
+    mobile,
+    tracks_for_label: list[TrackState],
+    reserved_track_ids: set[str],
+    second: int,
+    frame_diag: float,
+    opts: IngestOptions,
+) -> Optional[TrackState]:
+    best_track: Optional[TrackState] = None
+    best_score = float("-inf")
+
+    for track in tracks_for_label:
+        if track.instance_id in reserved_track_ids:
+            continue
+        if (second - track.last_second) > opts.track_max_gap_seconds:
+            continue
+
+        iou = box_iou(mobile.bbox, track.bbox)
+        dist_ratio = center_distance(mobile.bbox, track.bbox) / max(1.0, frame_diag)
+
+        if iou < opts.track_iou_threshold and dist_ratio > opts.track_center_dist_ratio:
+            continue
+
+        # Higher IoU + lower distance should win.
+        score = iou - dist_ratio
+        if score > best_score:
+            best_score = score
+            best_track = track
+
+    return best_track
+
+
+def _assign_instance_ids(
+    mobile_items: list,
+    tracks: dict[str, list[TrackState]],
+    counters: dict[str, int],
+    second: int,
+    frame_diag: float,
+    opts: IngestOptions,
+) -> list[tuple]:
+    assignments: list[tuple] = []
+    reserved_track_ids: set[str] = set()
+
+    # Greedy confidence-first assignment for deterministic tracking.
+    mobile_sorted = sorted(mobile_items, key=lambda d: d.confidence, reverse=True)
+
+    for mobile in mobile_sorted:
+        label_tracks = tracks.setdefault(mobile.label, [])
+        matched = _match_to_existing_track(
+            mobile=mobile,
+            tracks_for_label=label_tracks,
+            reserved_track_ids=reserved_track_ids,
+            second=second,
+            frame_diag=frame_diag,
+            opts=opts,
+        )
+
+        if matched is None:
+            instance_id = _new_instance_id(mobile.label, counters)
+            matched = TrackState(
+                instance_id=instance_id,
+                label=mobile.label,
+                bbox=mobile.bbox,
+                last_second=second,
+                hit_count=1,
+            )
+            label_tracks.append(matched)
+        else:
+            matched.bbox = mobile.bbox
+            matched.last_second = second
+            matched.hit_count += 1
+
+        reserved_track_ids.add(matched.instance_id)
+        assignments.append((mobile, matched.instance_id))
+
+    _prune_stale_tracks(tracks, second, opts.track_max_gap_seconds)
+    return assignments
 
 
 def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
@@ -67,6 +181,8 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
     frame_idx = 0
     processed_seconds = 0
     event_count = 0
+    tracks: dict[str, list[TrackState]] = {}
+    instance_counters: dict[str, int] = {}
 
     try:
         while True:
@@ -96,8 +212,18 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
 
             anchors = [d for d in detections if d.label in opts.anchor_classes]
             mobile_items = [d for d in detections if d.label not in opts.anchor_classes]
+            frame_h, frame_w = frame.shape[:2]
+            frame_diag = (frame_h**2 + frame_w**2) ** 0.5
+            mobile_with_instance = _assign_instance_ids(
+                mobile_items=mobile_items,
+                tracks=tracks,
+                counters=instance_counters,
+                second=second,
+                frame_diag=frame_diag,
+                opts=opts,
+            )
 
-            for local_idx, mobile in enumerate(mobile_items):
+            for local_idx, (mobile, instance_id) in enumerate(mobile_with_instance):
                 anchor = choose_anchor(mobile, anchors)
 
                 if anchor is None:
@@ -128,6 +254,7 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
                     "video_second": second,
                     "ingested_at_utc": datetime.now(timezone.utc).isoformat(),
                     "detector_model": detector.model_name,
+                    "instance_id": instance_id,
                     "label": mobile.label,
                     "confidence": round(mobile.confidence, 4),
                     "bbox_xyxy": list(mobile.bbox),
