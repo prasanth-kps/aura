@@ -21,8 +21,26 @@ def main() -> None:
     parser.add_argument("--video", required=True, help="Path to input video file")
     parser.add_argument("--out", default="data", help="Output root directory")
     parser.add_argument("--prefer-model", choices=["yolov11", "yolov8"], default="yolov11")
-    parser.add_argument("--conf", type=float, default=0.45, help="Detection confidence threshold")
+    parser.add_argument(
+        "--runtime",
+        choices=["auto", "qnn", "cpu"],
+        default="auto",
+        help="Inference runtime: auto (prefer QNN), qnn (require NPU), or cpu",
+    )
+    parser.add_argument("--conf", type=float, default=0.25, help="Detection confidence threshold")
     parser.add_argument("--iou", type=float, default=0.60, help="NMS IoU threshold")
+    parser.add_argument(
+        "--sample-fps",
+        type=float,
+        default=3.0,
+        help="Sampling rate from video stream (frames per second)",
+    )
+    parser.add_argument(
+        "--input-size",
+        type=int,
+        default=960,
+        help="Detector input size (e.g., 640 or 960)",
+    )
     parser.add_argument("--thumb-size", type=int, default=50, help="Thumbnail size in pixels")
     parser.add_argument("--crop-padding", type=int, default=8, help="Crop padding around bbox")
     parser.add_argument("--jpeg-quality", type=int, default=75, help="JPEG quality for thumbnails")
@@ -77,6 +95,8 @@ def main() -> None:
         prefer_model=args.prefer_model,
         conf_threshold=args.conf,
         iou_threshold=args.iou,
+        sample_fps=args.sample_fps,
+        detector_input_size=args.input_size,
         thumb_size=args.thumb_size,
         crop_padding=args.crop_padding,
         jpeg_quality=args.jpeg_quality,
@@ -87,12 +107,15 @@ def main() -> None:
         track_max_gap_seconds=args.track_max_gap,
         track_iou_threshold=args.track_iou_threshold,
         track_center_dist_ratio=args.track_center_dist_ratio,
+        runtime=args.runtime,
     )
 
     summary = run_video_ingestion(options)
     print("Ingestion complete.")
-    print(f"Processed seconds: {summary['processed_seconds']}")
+    print(f"Processed samples: {summary['processed_seconds']} @ {summary.get('sample_fps')} FPS")
     print(f"Events written: {summary['events_written']}")
+    print(f"Detector input size: {summary.get('detector_input_size')}")
+    print(f"Detector model/runtime: {summary.get('detector_model')} / {summary.get('detector_backend')}")
     print(
         "Memory log: "
         f"{(Path(args.out) / 'memory' / (Path(args.video).stem + '.events.jsonl'))}"

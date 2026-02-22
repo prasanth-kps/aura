@@ -1,4 +1,5 @@
 numpy
 opencv-python
 torch
+onnxruntime-qnn
 qai-hub-models[yolov11-det,yolov8-det]
