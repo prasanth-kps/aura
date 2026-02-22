@@ -7,6 +7,8 @@ from pathlib import Path
 from src.search import (
     available_instances,
     available_labels,
+    describe_color,
+    is_color_query,
     latest,
     load_events,
     resolve_memory_path,
@@ -28,6 +30,7 @@ def _resolve_input_memory_path(args: argparse.Namespace) -> Path:
 def _print_event(event: dict) -> None:
     print(f"instance_id    : {event.get('instance_id')}")
     print(f"label          : {event.get('label')}")
+    print(f"detected_color : {event.get('detected_color')}")
     print(f"video_second   : {event.get('video_second')}")
     print(f"context        : {event.get('context')}")
     print(f"confidence     : {event.get('confidence')}")
@@ -105,7 +108,10 @@ def main() -> None:
     events = load_events(memory_path)
 
     if args.command == "where_is":
-        result = where_is(events, args.label, instance_id=args.instance_id)
+        if is_color_query(args.label):
+            result = describe_color(events, args.label, instance_id=args.instance_id)
+        else:
+            result = where_is(events, args.label, instance_id=args.instance_id)
         if args.json:
             print(json.dumps(result, indent=2))
             return

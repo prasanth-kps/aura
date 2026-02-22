@@ -10,6 +10,7 @@ from uuid import uuid4
 import cv2
 
 from .anchors import ANCHOR_CLASSES
+from .color_utils import detect_color_from_image_path
 from .detector_qaihub import QualcommYoloDetector
 from .geometry import box_iou, center_distance, choose_anchor, relation_to_anchor
 from .storage import append_event, prepare_output_paths, slugify, write_thumbnail
@@ -270,6 +271,7 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
                 )
                 if not saved:
                     continue
+                detected_color = detect_color_from_image_path(thumb_path)
 
                 event = {
                     "video_id": video_id,
@@ -284,6 +286,7 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
                     "anchor_label": anchor_label,
                     "relation": relation,
                     "context": context,
+                    "detected_color": detected_color,
                     "thumbnail_path": str(thumb_path),
                 }
                 append_event(memory_path, event)
