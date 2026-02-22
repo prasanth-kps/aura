@@ -41,9 +41,10 @@ def inject_styles() -> None:
         """
         <style>
         .main {
-            background: linear-gradient(180deg, #0b1020 0%, #12192f 100%);
+            background: #000000 !important;
         }
         .stApp {
+            background: #000000 !important;
             color: #e8ecff;
         }
         .hero-card {
@@ -95,6 +96,99 @@ def inject_styles() -> None:
             border-radius: 8px;
             padding: 12px;
             margin: 8px 0;
+        }
+        /* Image Summarizer Tab - Dark with accent glow */
+        .image-summarizer-header {
+            position: relative;
+            margin-bottom: 20px;
+        }
+        .glow-orb {
+            position: absolute;
+            top: -40px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 300px;
+            height: 150px;
+            background: radial-gradient(ellipse at center,
+                        rgba(139, 92, 246, 0.4) 0%,
+                        rgba(59, 130, 246, 0.2) 30%,
+                        transparent 70%);
+            filter: blur(30px);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .image-card {
+            position: relative;
+            z-index: 1;
+            background: linear-gradient(145deg, rgba(245, 245, 250, 0.98) 0%, rgba(235, 235, 245, 0.95) 100%) !important;
+            border: 1px solid rgba(139, 92, 246, 0.4) !important;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15),
+                        0 0 60px rgba(139, 92, 246, 0.1),
+                        0 0 100px rgba(59, 130, 246, 0.05),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+        }
+        .image-card .feature-title {
+            font-size: 1.3rem !important;
+            background: linear-gradient(90deg, #7c3aed 0%, #3b82f6 50%, #8b5cf6 100%) !important;
+            -webkit-background-clip: text !important;
+            -webkit-text-fill-color: transparent !important;
+        }
+        .image-card .muted {
+            color: #1f2937 !important;
+        }
+        .glow-text {
+            text-shadow: 0 0 20px rgba(139, 92, 246, 0.6),
+                         0 0 40px rgba(139, 92, 246, 0.4),
+                         0 0 60px rgba(59, 130, 246, 0.2);
+        }
+        /* Summary result styling */
+        .summary-result {
+            background: linear-gradient(145deg, rgba(250, 250, 255, 0.98) 0%, rgba(240, 240, 250, 0.95) 100%);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 16px 0;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1),
+                        0 0 40px rgba(139, 92, 246, 0.08);
+            color: #1f2937;
+        }
+        .summary-result h3 {
+            color: #7c3aed;
+            margin-bottom: 12px;
+        }
+        .summary-result p {
+            color: #1f2937 !important;
+        }
+        /* Detailed Analysis styling - black background */
+        .detailed-analysis {
+            background: linear-gradient(145deg, #0a0a0f 0%, #121218 100%);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 8px 0;
+            color: #e8ecff;
+        }
+        .detailed-analysis h4 {
+            color: #a78bfa;
+            margin-bottom: 12px;
+            font-size: 1.1rem;
+        }
+        .detailed-analysis .analysis-section {
+            margin-bottom: 16px;
+        }
+        .detailed-analysis .section-title {
+            color: #c084fc;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .detailed-analysis .item {
+            color: #d4d4dc;
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(139, 92, 246, 0.1);
+        }
+        .detailed-analysis .score {
+            color: #60a5fa;
+            font-family: monospace;
         }
         </style>
         """,
@@ -405,13 +499,17 @@ def load_summarizer_engine(mode: str = "clip", use_npu: bool = True):
 
 def image_summarizer_tab():
     """Image Summarizer interface tab."""
+    # Styled header with glow effect
     st.markdown("""
-    <div class="feature-card">
-        <div class="feature-title">Image Summarizer</div>
-        <p class="muted">
-            Summarize regions of images using CLIP (fast zero-shot) or BLIP (detailed captioning).
-            Select a region and get AI-powered descriptions.
-        </p>
+    <div class="image-summarizer-header">
+        <div class="glow-orb"></div>
+        <div class="feature-card image-card">
+            <div class="feature-title glow-text">Image Summarizer</div>
+            <p class="muted">
+                Summarize regions of images using CLIP (fast zero-shot) or BLIP (detailed captioning).
+                Select a region and get AI-powered descriptions.
+            </p>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -506,11 +604,15 @@ def image_summarizer_tab():
                     bbox = (x1, y1, x2, y2)
                     result = engine.summarize(image, bbox)
 
-                # Display results
-                st.markdown("""<div class="success-box">""", unsafe_allow_html=True)
-                st.subheader("Summary")
-                st.write(result["summary"])
-                st.markdown("</div>", unsafe_allow_html=True)
+                # Display results with glow styling
+                st.markdown("""
+                <div class="summary-result">
+                    <h3>Summary</h3>
+                    <p style="font-size: 1.1rem; line-height: 1.6; color: #1f2937;">
+                """ + result["summary"] + """
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
 
                 # Metrics
                 c1, c2, c3 = st.columns(3)
@@ -518,48 +620,37 @@ def image_summarizer_tab():
                 c2.metric("Inference Time", f"{result['total_ms']:.1f} ms")
                 c3.metric("Active Models", ", ".join(engine.get_active_models()))
 
-                # Details
+                # Details with black background
                 if result.get("details"):
-                    with st.expander("Detailed Analysis", expanded=True):
-                        details = result["details"]
+                    details = result["details"]
 
-                        if "scenes" in details:
-                            st.write("**Top Scenes:**")
-                            for label, score in details["scenes"][:5]:
-                                st.write(f"- {label}: {score:.3f}")
+                    # Build HTML for detailed analysis
+                    html_content = '<div class="detailed-analysis"><h4>Detailed Analysis</h4>'
 
-                        if "attributes" in details:
-                            st.write("**Attributes:**")
-                            for label, score in details["attributes"][:5]:
-                                st.write(f"- {label}: {score:.3f}")
+                    if "scenes" in details:
+                        html_content += '<div class="analysis-section"><div class="section-title">Top Scenes</div>'
+                        for label, score in details["scenes"][:5]:
+                            html_content += f'<div class="item">{label}: <span class="score">{score:.3f}</span></div>'
+                        html_content += '</div>'
 
-                        if "actions" in details:
-                            st.write("**Actions:**")
-                            for label, score in details["actions"][:3]:
-                                st.write(f"- {label}: {score:.3f}")
+                    if "attributes" in details:
+                        html_content += '<div class="analysis-section"><div class="section-title">Attributes</div>'
+                        for label, score in details["attributes"][:5]:
+                            html_content += f'<div class="item">{label}: <span class="score">{score:.3f}</span></div>'
+                        html_content += '</div>'
+
+                    if "actions" in details:
+                        html_content += '<div class="analysis-section"><div class="section-title">Actions</div>'
+                        for label, score in details["actions"][:3]:
+                            html_content += f'<div class="item">{label}: <span class="score">{score:.3f}</span></div>'
+                        html_content += '</div>'
+
+                    html_content += '</div>'
+                    st.markdown(html_content, unsafe_allow_html=True)
             else:
                 st.error("Failed to initialize summarization engine")
     else:
         st.info("Upload or select an image to begin")
-
-    # PyQt6 GUI option
-    st.divider()
-    st.subheader("Full GUI Application")
-    st.markdown("""
-    For a more interactive experience with drag-and-drop region selection,
-    launch the standalone PyQt6 application:
-    """)
-
-    if st.button("Launch GUI App", use_container_width=True):
-        cmd = [sys.executable, str(PROJECT_ROOT / "image-summarizer" / "main.py")]
-        if mode != "clip":
-            cmd.extend(["--mode", mode])
-        if not use_npu:
-            cmd.append("--no-npu")
-
-        st.code(" ".join(cmd))
-        subprocess.Popen(cmd)
-        st.success("GUI application launched!")
 
 
 # ============================================================
