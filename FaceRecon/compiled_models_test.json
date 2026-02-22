@@ -1,0 +1,6 @@
+{
+  "device": "Samsung Galaxy S24 (Family)",
+  "runtime": "tflite",
+  "embedding_compile_job_id": "jp2mrk245",
+  "detector_compile_job_id": null
+}

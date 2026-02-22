@@ -1,0 +1,26 @@
+# Core
+numpy
+torch
+torchaudio
+opencv-python
+faster-whisper
+
+# Face recognition (Qualcomm)
+qai-hub-models[cavaface]
+qai-hub
+
+# ONNX / NPU
+onnx
+onnxruntime
+requests
+
+# Audio
+sounddevice
+
+# Live subtitles
+av
+scipy
+tiktoken
+
+# Optional: DirectML (Windows GPU acceleration)
+# torch-directml
