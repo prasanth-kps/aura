@@ -45,7 +45,7 @@ def inject_styles() -> None:
         }
         .stApp {
             background: #000000 !important;
-            color: #e8ecff;
+            color: #f0f4ff;
         }
         .hero-card {
             border: 1px solid rgba(122, 162, 255, 0.35);
@@ -64,7 +64,7 @@ def inject_styles() -> None:
             -webkit-text-fill-color: transparent;
         }
         .hero-sub {
-            color: #bac8ff;
+            color: #d8e2ff;
             margin-bottom: 0;
         }
         .feature-card {
@@ -77,10 +77,10 @@ def inject_styles() -> None:
         .feature-title {
             font-size: 1.1rem;
             font-weight: 600;
-            color: #c084fc;
+            color: #d8b4fe;
         }
         .muted {
-            color: #b8c2e8;
+            color: #d4deff;
             font-size: 0.92rem;
         }
         .success-box {
@@ -97,7 +97,7 @@ def inject_styles() -> None:
             padding: 12px;
             margin: 8px 0;
         }
-        /* Image Summarizer Tab - Dark with accent glow */
+        /* Image Summarizer Tab - Dark theme with accent glow */
         .image-summarizer-header {
             position: relative;
             margin-bottom: 20px;
@@ -120,12 +120,11 @@ def inject_styles() -> None:
         .image-card {
             position: relative;
             z-index: 1;
-            background: linear-gradient(145deg, rgba(245, 245, 250, 0.98) 0%, rgba(235, 235, 245, 0.95) 100%) !important;
+            background: rgba(15, 22, 43, 0.6) !important;
             border: 1px solid rgba(139, 92, 246, 0.4) !important;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15),
-                        0 0 60px rgba(139, 92, 246, 0.1),
-                        0 0 100px rgba(59, 130, 246, 0.05),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3),
+                        0 0 60px rgba(139, 92, 246, 0.15),
+                        0 0 100px rgba(59, 130, 246, 0.08) !important;
         }
         .image-card .feature-title {
             font-size: 1.3rem !important;
@@ -134,30 +133,30 @@ def inject_styles() -> None:
             -webkit-text-fill-color: transparent !important;
         }
         .image-card .muted {
-            color: #1f2937 !important;
+            color: #d4deff !important;
         }
         .glow-text {
             text-shadow: 0 0 20px rgba(139, 92, 246, 0.6),
                          0 0 40px rgba(139, 92, 246, 0.4),
                          0 0 60px rgba(59, 130, 246, 0.2);
         }
-        /* Summary result styling */
+        /* Summary result styling - dark theme */
         .summary-result {
-            background: linear-gradient(145deg, rgba(250, 250, 255, 0.98) 0%, rgba(240, 240, 250, 0.95) 100%);
+            background: rgba(15, 22, 43, 0.75);
             border: 1px solid rgba(139, 92, 246, 0.3);
             border-radius: 12px;
             padding: 20px;
             margin: 16px 0;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1),
-                        0 0 40px rgba(139, 92, 246, 0.08);
-            color: #1f2937;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2),
+                        0 0 40px rgba(139, 92, 246, 0.1);
+            color: #f0f4ff;
         }
         .summary-result h3 {
-            color: #7c3aed;
+            color: #c4b5fd;
             margin-bottom: 12px;
         }
         .summary-result p {
-            color: #1f2937 !important;
+            color: #f0f4ff !important;
         }
         /* Detailed Analysis styling - black background */
         .detailed-analysis {
@@ -166,10 +165,10 @@ def inject_styles() -> None:
             border-radius: 12px;
             padding: 20px;
             margin: 8px 0;
-            color: #e8ecff;
+            color: #f0f4ff;
         }
         .detailed-analysis h4 {
-            color: #a78bfa;
+            color: #c4b5fd;
             margin-bottom: 12px;
             font-size: 1.1rem;
         }
@@ -177,18 +176,337 @@ def inject_styles() -> None:
             margin-bottom: 16px;
         }
         .detailed-analysis .section-title {
-            color: #c084fc;
+            color: #d8b4fe;
             font-weight: 600;
             margin-bottom: 8px;
         }
         .detailed-analysis .item {
-            color: #d4d4dc;
+            color: #e8eaed;
             padding: 4px 0;
             border-bottom: 1px solid rgba(139, 92, 246, 0.1);
         }
         .detailed-analysis .score {
-            color: #60a5fa;
+            color: #93c5fd;
             font-family: monospace;
+        }
+        /* ========== GLOBAL TEXT - BRIGHT WHITE ========== */
+        * {
+            color: #ffffff;
+        }
+
+        /* All paragraphs and spans */
+        p, span, div, label, li, td, th {
+            color: #ffffff !important;
+        }
+
+        /* Headings - bright white */
+        h1, h2, h3, h4, h5, h6 {
+            color: #ffffff !important;
+        }
+
+        /* ========== STREAMLIT WIDGET LABELS ========== */
+        .stRadio > label,
+        .stSelectbox > label,
+        .stTextInput > label,
+        .stNumberInput > label,
+        .stSlider > label,
+        .stFileUploader > label,
+        .stCheckbox > label,
+        .stMultiSelect > label,
+        .stTextArea > label,
+        [data-testid="stWidgetLabel"] {
+            color: #ffffff !important;
+            font-weight: 500 !important;
+        }
+
+        /* Radio button options */
+        .stRadio > div[role="radiogroup"] > label,
+        .stRadio [data-testid="stMarkdownContainer"] p {
+            color: #ffffff !important;
+        }
+
+        /* Selectbox text and background */
+        .stSelectbox > div > div,
+        .stSelectbox [data-baseweb="select"] span,
+        [data-baseweb="select"] > div {
+            color: #ffffff !important;
+            background-color: #000000 !important;
+        }
+
+        /* Selectbox container */
+        .stSelectbox [data-baseweb="select"],
+        .stSelectbox [data-baseweb="select"] > div {
+            background-color: #000000 !important;
+            border-color: rgba(122, 162, 255, 0.4) !important;
+        }
+
+        /* Dropdown menu container */
+        [data-baseweb="popover"],
+        [data-baseweb="popover"] > div,
+        [data-baseweb="menu"],
+        [data-baseweb="select"] [role="listbox"],
+        ul[role="listbox"],
+        div[data-baseweb="popover"] {
+            background-color: #000000 !important;
+            background: #000000 !important;
+            border: 1px solid rgba(122, 162, 255, 0.4) !important;
+        }
+
+        /* Dropdown list container */
+        [data-baseweb="list"],
+        [data-baseweb="menu"] > div,
+        [role="listbox"],
+        [role="listbox"] > div {
+            background-color: #000000 !important;
+            background: #000000 !important;
+        }
+
+        /* Dropdown options */
+        [data-baseweb="menu"] li,
+        [data-baseweb="select"] [role="option"],
+        ul[role="listbox"] li,
+        [role="option"],
+        li[role="option"] {
+            background-color: #000000 !important;
+            background: #000000 !important;
+            color: #ffffff !important;
+        }
+
+        /* Dropdown option hover */
+        [data-baseweb="menu"] li:hover,
+        [data-baseweb="select"] [role="option"]:hover,
+        ul[role="listbox"] li:hover,
+        [role="option"]:hover,
+        li[role="option"]:hover {
+            background-color: #1a1a2e !important;
+            background: #1a1a2e !important;
+        }
+
+        /* Selected option highlight */
+        [data-baseweb="menu"] li[aria-selected="true"],
+        [data-baseweb="select"] [role="option"][aria-selected="true"],
+        [role="option"][aria-selected="true"] {
+            background-color: rgba(122, 162, 255, 0.2) !important;
+            background: rgba(122, 162, 255, 0.2) !important;
+        }
+
+        /* Streamlit specific dropdown styling */
+        .stSelectbox div[data-baseweb="popover"] > div {
+            background-color: #000000 !important;
+        }
+
+        .stSelectbox ul {
+            background-color: #000000 !important;
+            background: #000000 !important;
+        }
+
+        .stSelectbox ul li {
+            background-color: #000000 !important;
+            background: #000000 !important;
+            color: #ffffff !important;
+        }
+
+        .stSelectbox ul li:hover {
+            background-color: #1a1a2e !important;
+            background: #1a1a2e !important;
+        }
+
+        /* Text inputs */
+        .stTextInput > div > div > input,
+        .stNumberInput > div > div > input,
+        .stTextArea textarea,
+        input, textarea {
+            color: #ffffff !important;
+            background-color: rgba(30, 30, 50, 0.8) !important;
+        }
+
+        /* Placeholder text */
+        input::placeholder, textarea::placeholder {
+            color: #a0a0b0 !important;
+        }
+
+        /* ========== BUTTONS ========== */
+        .stButton > button,
+        .stDownloadButton > button,
+        button {
+            color: #ffffff !important;
+        }
+
+        /* Primary button */
+        .stButton > button[kind="primary"] {
+            background: linear-gradient(90deg, #7c3aed, #3b82f6) !important;
+            color: #ffffff !important;
+            font-weight: 600 !important;
+        }
+
+        /* ========== SLIDERS ========== */
+        .stSlider > div > div > div > div,
+        .stSlider [data-testid="stTickBarMin"],
+        .stSlider [data-testid="stTickBarMax"],
+        .stSlider span {
+            color: #ffffff !important;
+        }
+
+        /* ========== FILE UPLOADER ========== */
+        .stFileUploader > div > div,
+        .stFileUploader label,
+        .stFileUploader span,
+        [data-testid="stFileUploader"] * {
+            color: #ffffff !important;
+        }
+
+        /* Drag and drop box */
+        .stFileUploader [data-testid="stFileUploaderDropzone"] {
+            color: #ffffff !important;
+            background-color: #000000 !important;
+            border-color: rgba(122, 162, 255, 0.4) !important;
+        }
+
+        /* File uploader dropzone inner elements */
+        .stFileUploader [data-testid="stFileUploaderDropzone"] > div {
+            background-color: #000000 !important;
+        }
+
+        .stFileUploader section {
+            background-color: #000000 !important;
+        }
+
+        .stFileUploader [data-testid="stFileUploaderDropzoneInput"] {
+            background-color: #000000 !important;
+        }
+
+        /* Browse files button */
+        .stFileUploader button,
+        .stFileUploader [data-testid="stFileUploaderDropzone"] button,
+        .stFileUploader [data-testid="baseButton-secondary"] {
+            background-color: #000000 !important;
+            color: #ffffff !important;
+            border: 1px solid rgba(122, 162, 255, 0.4) !important;
+        }
+
+        .stFileUploader button:hover {
+            background-color: #1a1a2e !important;
+            border-color: rgba(122, 162, 255, 0.6) !important;
+        }
+
+        /* ========== EXPANDERS ========== */
+        .streamlit-expanderHeader,
+        [data-testid="stExpander"] summary,
+        [data-testid="stExpander"] span {
+            color: #ffffff !important;
+        }
+
+        /* ========== TABS ========== */
+        .stTabs [data-baseweb="tab"],
+        .stTabs [data-baseweb="tab-list"] button {
+            color: #ffffff !important;
+        }
+
+        /* Active tab */
+        .stTabs [aria-selected="true"] {
+            color: #a78bfa !important;
+            border-bottom-color: #a78bfa !important;
+        }
+
+        /* ========== CHECKBOXES ========== */
+        .stCheckbox > label > span,
+        .stCheckbox label {
+            color: #ffffff !important;
+        }
+
+        /* ========== METRICS ========== */
+        [data-testid="stMetricLabel"],
+        [data-testid="stMetricLabel"] p {
+            color: #c4b5fd !important;
+        }
+
+        [data-testid="stMetricValue"],
+        [data-testid="stMetricValue"] div {
+            color: #ffffff !important;
+            font-weight: 600 !important;
+        }
+
+        /* ========== CAPTIONS & INFO ========== */
+        .stCaption, small, .caption {
+            color: #c4b5fd !important;
+        }
+
+        /* Info, success, warning, error boxes */
+        .stAlert, [data-testid="stAlert"] {
+            color: #ffffff !important;
+        }
+
+        .stAlert p, [data-testid="stAlert"] p {
+            color: #ffffff !important;
+        }
+
+        /* ========== MARKDOWN TEXT ========== */
+        [data-testid="stMarkdownContainer"],
+        [data-testid="stMarkdownContainer"] p,
+        [data-testid="stMarkdownContainer"] li,
+        [data-testid="stMarkdownContainer"] span {
+            color: #ffffff !important;
+        }
+
+        /* ========== SIDEBAR ========== */
+        [data-testid="stSidebar"] {
+            background: #000000 !important;
+        }
+
+        [data-testid="stSidebar"] > div:first-child {
+            background: #000000 !important;
+        }
+
+        [data-testid="stSidebar"],
+        [data-testid="stSidebar"] * {
+            color: #ffffff !important;
+        }
+
+        [data-testid="stSidebar"] .stMarkdown p {
+            color: #e0e0f0 !important;
+        }
+
+        /* Sidebar header */
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3 {
+            color: #ffffff !important;
+        }
+
+        /* ========== CODE BLOCKS ========== */
+        code, pre, .stCode {
+            color: #e0e0f0 !important;
+            background-color: rgba(20, 20, 40, 0.9) !important;
+        }
+
+        /* ========== TEXT AREA ========== */
+        .stTextArea label,
+        .stTextArea textarea {
+            color: #ffffff !important;
+        }
+
+        /* ========== DIVIDERS ========== */
+        hr, .stDivider {
+            border-color: rgba(122, 162, 255, 0.3) !important;
+        }
+
+        /* ========== LINKS ========== */
+        a {
+            color: #93c5fd !important;
+        }
+
+        a:hover {
+            color: #bfdbfe !important;
+        }
+
+        /* ========== SPINNERS ========== */
+        .stSpinner > div > div {
+            color: #ffffff !important;
+        }
+
+        /* ========== WRITE OUTPUT ========== */
+        .stWrite, .element-container {
+            color: #ffffff !important;
         }
         </style>
         """,
@@ -436,7 +754,7 @@ def face_recognition_tab():
                     st.session_state.face_suggested_names = names
 
     with col2:
-        if st.button("Run Face Recognition", use_container_width=True, disabled=not video_path):
+        if st.button("Run Face Recognition", type="primary", use_container_width=True, disabled=not video_path):
             # Run the CLI pipeline via subprocess
             cmd = [
                 sys.executable,
@@ -462,7 +780,7 @@ def face_recognition_tab():
                 st.error(f"Error: {result.stderr}")
 
     with col3:
-        if st.button("View Database", use_container_width=True):
+        if st.button("View Database", type="primary", use_container_width=True):
             db = Path(db_path)
             if db.exists():
                 names, embeddings = load_face_db(db)
@@ -604,11 +922,11 @@ def image_summarizer_tab():
                     bbox = (x1, y1, x2, y2)
                     result = engine.summarize(image, bbox)
 
-                # Display results with glow styling
+                # Display results with dark theme styling
                 st.markdown("""
                 <div class="summary-result">
                     <h3>Summary</h3>
-                    <p style="font-size: 1.1rem; line-height: 1.6; color: #1f2937;">
+                    <p style="font-size: 1.1rem; line-height: 1.6; color: #f0f4ff;">
                 """ + result["summary"] + """
                     </p>
                 </div>
