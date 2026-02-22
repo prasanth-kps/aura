@@ -5,11 +5,19 @@ import re
 from pathlib import Path
 from typing import Any
 
-import cv2
+try:
+    import cv2
+except Exception:
+    cv2 = None
 
 from .color_utils import classify_bgr_image_color
 from .llm_reasoner import synthesize_answer
-from .local_rag import semantic_similarity_scores, visual_qa_answers, visual_qa_model_available
+from .local_rag import (
+    get_runtime_backends,
+    semantic_similarity_scores,
+    visual_qa_answers,
+    visual_qa_model_available,
+)
 
 
 DEFAULT_LABEL_ALIASES = {
@@ -275,7 +283,18 @@ def _event_thumbnail_color(
     if thumb in cache:
         return cache[thumb]
 
-    image = cv2.imread(thumb)
+    if cv2 is None:
+        try:
+            import numpy as np
+            from PIL import Image
+
+            image_rgb = np.array(Image.open(thumb).convert("RGB"))
+            image = image_rgb[:, :, ::-1]
+        except Exception:
+            cache[thumb] = None
+            return None
+    else:
+        image = cv2.imread(thumb)
     if image is None:
         cache[thumb] = None
         return None
@@ -849,6 +868,7 @@ def _event_evidence_row(
         "thumbnail_path": event.get("thumbnail_path"),
         "frame_path": None,
         "frame_id": str(event.get("frame_id", "")).strip(),
+        "detector_backend": str(event.get("detector_backend", "")).strip(),
         "instance_id": event.get("instance_id"),
     }
 
@@ -880,6 +900,7 @@ def _frame_evidence_row(frame_record: dict[str, Any]) -> dict[str, Any]:
         "thumbnail_path": None,
         "frame_path": frame_record.get("frame_path"),
         "frame_id": str(frame_record.get("frame_id", "")).strip(),
+        "detector_backend": str(frame_record.get("detector_backend", "")).strip(),
         "instance_id": None,
     }
 
@@ -1058,6 +1079,17 @@ def ask_memory(
         limit = 5
 
     intent = _detect_question_intent(question)
+
+    def _model_backends(detector_backend: str = "", llm_status: str = "off") -> dict[str, str]:
+        rag = get_runtime_backends()
+        return {
+            "detector": detector_backend.strip() or "unknown",
+            "semantic": str(rag.get("semantic", "uninitialized")).strip() or "uninitialized",
+            "vqa": str(rag.get("vqa", "uninitialized")).strip() or "uninitialized",
+            "caption": str(rag.get("caption", "uninitialized")).strip() or "uninitialized",
+            "llm": llm_status,
+        }
+
     q_tokens = _tokenize_query(question)
     if not q_tokens:
         q_tokens = _tokenize_query(normalize_query_label(question, aliases=aliases))
@@ -1105,6 +1137,9 @@ def ask_memory(
                 "thumbnail_path": None,
                 "frame_path": frame_events[0].get("thumbnail_path") if frame_events else None,
                 "frame_id": frame_id,
+                "detector_backend": (
+                    str(frame_events[0].get("detector_backend", "")).strip() if frame_events else ""
+                ),
                 "instance_id": None,
             }
             row["score"] = _score_evidence(row, q_tokens, second_hint, primary_label=None)
@@ -1122,6 +1157,7 @@ def ask_memory(
             "abstained": True,
             "abstain_reason": "No frame records were available for visual reasoning.",
             "llm": {"enabled": use_llm, "used": False},
+            "model_backends": _model_backends(llm_status="enabled/fallback" if use_llm else "off"),
         }
 
     semantic_texts = [_row_text_for_semantic(r) for r in rows]
@@ -1170,7 +1206,14 @@ def ask_memory(
             "evidence": [],
             "citations_markdown": "",
             "confidence": "low",
+            "model_backends": _model_backends(llm_status="enabled/fallback" if use_llm else "off"),
         }
+
+    detector_backend = str(evidence[0].get("detector_backend", "")).strip()
+    model_backends = _model_backends(
+        detector_backend=detector_backend,
+        llm_status="enabled/fallback" if use_llm else "off",
+    )
 
     top_row = evidence[0]
     top_semantic = float(top_row.get("semantic_score", 0.0))
@@ -1199,6 +1242,7 @@ def ask_memory(
                 "model_ready": visual_model_ready,
                 "answers_produced": visual_nonempty,
             },
+            "model_backends": model_backends,
         }
 
     top_score = float(evidence[0].get("score", (0.0, -1))[0])
@@ -1295,12 +1339,15 @@ def ask_memory(
                 "model": llm_result.get("model"),
                 "base_url": llm_result.get("base_url"),
             }
+            model_name = str(llm_result.get("model", "")).strip()
+            model_backends["llm"] = f"remote/{model_name}" if model_name else "remote"
         else:
             llm_meta = {
                 "enabled": True,
                 "used": False,
                 "error": llm_result.get("error"),
             }
+            model_backends["llm"] = "enabled/fallback"
 
     return {
         "found": True,
@@ -1317,4 +1364,5 @@ def ask_memory(
             "model_ready": visual_model_ready,
             "answers_produced": visual_nonempty,
         },
+        "model_backends": model_backends,
     }

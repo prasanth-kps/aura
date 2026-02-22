@@ -920,6 +920,78 @@ def _build_query_command(
     return cmd
 
 
+def _run_ask_inprocess(
+    extractor_dir: Path,
+    out_dir: Path,
+    video_path: str,
+    question: str,
+    use_llm: bool,
+    llm_model: str | None,
+    llm_base_url: str | None,
+    llm_api_key: str | None,
+    strict_evidence: bool,
+    limit: int,
+) -> CommandResult:
+    t0 = time.perf_counter()
+    cmd = [
+        "inprocess",
+        "ask_memory",
+        "--video",
+        video_path,
+        "--out",
+        str(out_dir),
+        "--question",
+        question,
+        "--limit",
+        str(limit),
+    ]
+    try:
+        import importlib
+
+        extractor_path = str(extractor_dir)
+        if extractor_path not in sys.path:
+            sys.path.insert(0, extractor_path)
+        search = importlib.import_module("src.search")
+
+        events = search.load_events(search.resolve_memory_path(out_dir, Path(video_path)))
+        frame_records = search.load_frame_records(search.resolve_frames_path(out_dir, Path(video_path)))
+        payload = search.ask_memory(
+            events,
+            frame_records,
+            question,
+            limit=limit,
+            use_llm=use_llm,
+            llm_model=llm_model,
+            llm_base_url=llm_base_url,
+            llm_api_key=llm_api_key,
+            strict_evidence=strict_evidence,
+        )
+        stdout = json.dumps(payload, ensure_ascii=False)
+        elapsed = max(0.0, time.perf_counter() - t0)
+        return CommandResult(
+            ok=True,
+            command=cmd,
+            stdout=stdout,
+            stderr="",
+            return_code=0,
+            elapsed_seconds=elapsed,
+            payload=payload,
+            error=None,
+        )
+    except Exception as exc:
+        elapsed = max(0.0, time.perf_counter() - t0)
+        return CommandResult(
+            ok=False,
+            command=cmd,
+            stdout="",
+            stderr=str(exc),
+            return_code=1,
+            elapsed_seconds=elapsed,
+            payload=None,
+            error=f"Mind palace query failed: {exc}",
+        )
+
+
 def _validate_paths(python_exec: str, extractor_dir: Path) -> list[str]:
     problems: list[str] = []
     if not python_exec.strip():
@@ -1118,7 +1190,7 @@ def main() -> None:
                         timeout_seconds=float(st.session_state.ingest_timeout_seconds),
                     )
 
-                st.session_state.last_cmd = cmd
+                st.session_state.last_cmd = result.command
                 if result.ok:
                     st.session_state.last_ingest_summary = _parse_ingest_summary(result.stdout)
                     st.success("Ingestion completed.")
@@ -1234,24 +1306,21 @@ def main() -> None:
                     if bool(llm_on)
                     else "off"
                 )
-                cmd = _build_query_command(
-                    python_exec=python_exec,
-                    extractor_dir=extractor_dir,
-                    out_dir=out_dir,
-                    video_path=st.session_state.last_video_path,
-                    command="ask",
-                    question=mp_question.strip(),
-                    use_llm=llm_on,
-                    llm_model=llm_model.strip() or None,
-                    llm_base_url=llm_base_url.strip() or None,
-                    llm_api_key=llm_api_key.strip() or None,
-                    strict_evidence=bool(strict_evidence),
-                    limit=int(mp_limit),
-                )
                 with st.spinner("Searching memory evidence..."):
-                    result = _run_command(cmd, cwd=extractor_dir, expect_json=True)
+                    result = _run_ask_inprocess(
+                        extractor_dir=extractor_dir,
+                        out_dir=out_dir,
+                        video_path=st.session_state.last_video_path,
+                        question=mp_question.strip(),
+                        use_llm=llm_on,
+                        llm_model=llm_model.strip() or None,
+                        llm_base_url=llm_base_url.strip() or None,
+                        llm_api_key=llm_api_key.strip() or None,
+                        strict_evidence=bool(strict_evidence),
+                        limit=int(mp_limit),
+                    )
 
-                st.session_state.last_cmd = cmd
+                st.session_state.last_cmd = result.command
                 if not result.ok:
                     st.error(result.error or "Mind palace query failed.")
                 else:

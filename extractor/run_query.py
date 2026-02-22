@@ -193,6 +193,13 @@ def main() -> None:
             print(f"intent: {intent}")
         if confidence:
             print(f"confidence: {confidence}")
+        model_backends = result.get("model_backends")
+        if isinstance(model_backends, dict) and model_backends:
+            compact = ", ".join(
+                f"{k}={v}" for k, v in model_backends.items() if str(v).strip()
+            )
+            if compact:
+                print(f"model_backends: {compact}")
         print(result["answer"])
         citations_md = str(result.get("citations_markdown", "")).strip()
         if citations_md and "### Evidence" not in str(result.get("answer", "")):
