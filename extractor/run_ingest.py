@@ -24,8 +24,8 @@ def main() -> None:
     parser.add_argument(
         "--runtime",
         choices=["auto", "qnn", "cpu"],
-        default="auto",
-        help="Inference runtime: auto (prefer QNN), qnn (require NPU), or cpu",
+        default="qnn",
+        help="Inference runtime: qnn (default), auto (prefer QNN), or cpu",
     )
     parser.add_argument("--conf", type=float, default=0.25, help="Detection confidence threshold")
     parser.add_argument("--iou", type=float, default=0.60, help="NMS IoU threshold")
