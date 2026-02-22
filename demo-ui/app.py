@@ -410,12 +410,13 @@ def _show_event(event: dict[str, Any]) -> None:
     second = event.get("video_second", "?")
     context = str(event.get("context", "in_scene"))
     confidence = event.get("confidence", "?")
+    detected_color = str(event.get("detected_color", "")).strip() or "unknown"
 
     st.markdown(
         f"""
         <div class="event-card">
           <div class="event-title">{_event_label(event)}</div>
-          <div class="muted">second={second} • context={context} • confidence={confidence}</div>
+          <div class="muted">second={second} • context={context} • color={detected_color} • confidence={confidence}</div>
         </div>
         """,
         unsafe_allow_html=True,

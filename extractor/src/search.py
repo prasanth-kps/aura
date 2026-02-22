@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any
 
 import cv2
-import numpy as np
+
+from .color_utils import classify_bgr_image_color
 
 
 DEFAULT_LABEL_ALIASES = {
@@ -67,6 +68,14 @@ QUERY_STOPWORDS = {
 
 LOW_CONFIDENCE_THRESHOLD = 0.55
 RECENT_SECONDS_WINDOW = 10
+
+
+def is_color_query(text: str) -> bool:
+    cleaned = _normalize_spaces(text)
+    return bool(
+        re.search(r"\b(what|which)\s+color\s+(is|was|are|were)\b", cleaned)
+        or re.search(r"\bcolor\s+of\b", cleaned)
+    )
 
 
 def resolve_memory_path(out_root: Path, video_path: Path) -> Path:
@@ -200,45 +209,14 @@ def _sorted_recent(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
 
 
-def _classify_bgr_image_color(image_bgr: np.ndarray) -> str | None:
-    if image_bgr.size == 0:
-        return None
-
-    hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
-    h_mean = float(np.mean(hsv[:, :, 0]))  # 0..179
-    s_mean = float(np.mean(hsv[:, :, 1]))  # 0..255
-    v_mean = float(np.mean(hsv[:, :, 2]))  # 0..255
-
-    # Brightness/saturation-based neutral colors first.
-    if v_mean < 55:
-        return "black"
-    if s_mean < 35:
-        if v_mean > 205:
-            return "white"
-        return "gray"
-
-    # Chromatic colors.
-    if 10 <= h_mean < 25 and v_mean < 160:
-        return "brown"
-    if h_mean < 10 or h_mean >= 170:
-        return "red"
-    if h_mean < 20:
-        return "orange"
-    if h_mean < 35:
-        return "yellow"
-    if h_mean < 85:
-        return "green"
-    if h_mean < 130:
-        return "blue"
-    if h_mean < 165:
-        return "purple"
-    return "red"
-
-
 def _event_thumbnail_color(
     event: dict[str, Any],
     color_cache: dict[str, str | None] | None = None,
 ) -> str | None:
+    event_color = str(event.get("detected_color", "")).strip().lower()
+    if event_color:
+        return COLOR_TOKEN_ALIASES.get(event_color, event_color)
+
     thumb = str(event.get("thumbnail_path", "")).strip()
     if not thumb:
         return None
@@ -539,6 +517,8 @@ def where_is(
 
     if target_color:
         answer = f"{answer} (matched color: {target_color})"
+    elif event_color:
+        answer = f"{answer} (detected color: {event_color})"
 
     if event_instance:
         answer = f"{answer} (instance_id: {event_instance})"
@@ -548,6 +528,56 @@ def where_is(
         "query": label_or_query,
         "canonical_label": target_label,
         "target_color": target_color,
+        "resolved_instance_id": resolved_instance or event_instance,
+        "answer": answer,
+        "event": latest_event,
+    }
+
+
+def describe_color(
+    events: list[dict[str, Any]],
+    label_or_query: str,
+    instance_id: str | None = None,
+    aliases: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    target_label, _, resolved_instance, matches = _resolve_query_events(
+        events=events,
+        label_or_query=label_or_query,
+        instance_id=instance_id,
+        aliases=aliases,
+    )
+    latest_event = matches[0] if matches else None
+
+    if latest_event is None:
+        return {
+            "found": False,
+            "query": label_or_query,
+            "canonical_label": target_label,
+            "target_color": None,
+            "resolved_instance_id": resolved_instance,
+            "answer": "I haven't seen it yet.",
+            "event": None,
+        }
+
+    event_color = _event_thumbnail_color(latest_event, color_cache={})
+    second = _event_second(latest_event)
+    confidence = _event_confidence(latest_event)
+    event_instance = str(latest_event.get("instance_id", "")).strip() or None
+
+    if event_color:
+        answer = f"The {target_label} appears {event_color} at second {second}."
+    else:
+        answer = f"I can see the {target_label} at second {second}, but I couldn't determine its color."
+
+    answer = f"{answer} (confidence: {confidence:.2f})"
+    if event_instance:
+        answer = f"{answer} (instance_id: {event_instance})"
+
+    return {
+        "found": True,
+        "query": label_or_query,
+        "canonical_label": target_label,
+        "target_color": event_color,
         "resolved_instance_id": resolved_instance or event_instance,
         "answer": answer,
         "event": latest_event,
