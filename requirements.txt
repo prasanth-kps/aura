@@ -1,0 +1,50 @@
+# ============================================================
+# Aura - Unified Requirements
+# Combines dependencies for all components:
+# - FaceRecon (face recognition + Whisper)
+# - image-summarizer (CLIP/BLIP summarization)
+# - extractor (object detection)
+# - demo-ui (unified Streamlit interface)
+# ============================================================
+
+# Core
+numpy>=1.24.0
+torch>=2.1.0
+torchaudio
+torchvision>=0.16.0
+Pillow>=10.0.0
+
+# Image/Video Processing
+opencv-python
+
+# Inference Runtimes
+onnx
+onnxruntime>=1.17.0
+# onnxruntime-qnn  # Install separately on Snapdragon for NPU
+
+# Qualcomm AI Hub
+qai-hub>=0.15.0
+qai-hub-models>=0.12.0
+
+# Face Recognition
+qai-hub-models[cavaface]
+
+# Transcription
+faster-whisper
+
+# Image Summarizer / AI
+transformers>=4.36.0
+scipy>=1.11.0
+
+# Audio
+sounddevice
+
+# UI
+streamlit>=1.34.0
+PyQt6>=6.6.0
+psutil>=5.9.0
+
+# Utilities
+requests
+av
+tiktoken
