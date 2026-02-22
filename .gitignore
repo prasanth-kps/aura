@@ -9,3 +9,8 @@
 /FaceRecon/ffmpeg-master-latest-win64-gpl/
 /FaceRecon/ffmpeg.exe
 /FaceRecon/ffmpeg.zip
+
+/demo-ui/__pycache__/
+/extractor/__pycache__/
+image-summarizer/__pycache__/
+**/__pycache__/
