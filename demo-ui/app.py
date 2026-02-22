@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import re
 import subprocess
@@ -15,6 +16,9 @@ import streamlit as st
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_EXTRACTOR_DIR = PROJECT_ROOT / "extractor"
 DEFAULT_OUT_DIR = PROJECT_ROOT / "demo_data"
+DEFAULT_CAPTION_MODEL = "nlpconnect/vit-gpt2-image-captioning"
+DEFAULT_SEMANTIC_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_VQA_MODEL = "dandelin/vilt-b32-finetuned-vqa"
 
 
 @dataclass
@@ -85,6 +89,30 @@ def _parse_ingest_summary(stdout: str) -> dict[str, Any]:
     return out
 
 
+def _split_answer_text(answer_text: str) -> tuple[str, str]:
+    """Return (main_answer, details_markdown) from model answer text."""
+    lines = [ln.rstrip() for ln in answer_text.splitlines()]
+    main_answer = ""
+    main_idx = -1
+    for idx, raw in enumerate(lines):
+        s = raw.strip()
+        if not s:
+            continue
+        if s.startswith("### "):
+            continue
+        main_answer = s.strip("*` ")
+        main_idx = idx
+        break
+
+    if main_idx < 0:
+        return "", ""
+
+    detail_lines = lines[main_idx + 1 :]
+    while detail_lines and not detail_lines[0].strip():
+        detail_lines.pop(0)
+    return main_answer, "\n".join(detail_lines).strip()
+
+
 def _ort_provider_info(python_exec: str, extractor_dir: Path) -> dict[str, Any]:
     script = (
         "import json; "
@@ -148,21 +176,376 @@ def _windows_npu_stats() -> dict[str, Any]:
 
 
 def _inject_styles() -> None:
-    # Revert to near-default Streamlit appearance to avoid theme conflicts.
     st.markdown(
         """
         <style>
+        .stApp {
+            background-color: #05070d;
+            background-image:
+                radial-gradient(850px 340px at 52% 10%, rgba(63, 94, 251, 0.17), transparent 72%),
+                radial-gradient(620px 300px at 20% 0%, rgba(21, 140, 225, 0.11), transparent 72%);
+            background-repeat: no-repeat, no-repeat;
+        }
+        @keyframes aura_star_drift_x {
+            from { transform: translateX(0); }
+            to { transform: translateX(120%); }
+        }
+        @keyframes aura_star_drift_diag {
+            from { transform: translate3d(0, 0, 0); }
+            to { transform: translate3d(125%, -28%, 0); }
+        }
+        @keyframes aura_star_pulse {
+            0%, 100% { opacity: 0.34; }
+            50% { opacity: 0.92; }
+        }
+        @keyframes aura_star_shoot {
+            0%, 60% {
+                opacity: 0;
+                transform: translate3d(0, 0, 0) rotate(-11deg);
+            }
+            66% {
+                opacity: 0.88;
+            }
+            100% {
+                opacity: 0;
+                transform: translate3d(430%, -32%, 0) rotate(-11deg);
+            }
+        }
+        .main .block-container {
+            max-width: 1180px;
+            padding-top: 1.45rem;
+            padding-bottom: 2.2rem;
+        }
+        .top-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.8rem;
+            color: #dfe6ff;
+            font-size: 0.96rem;
+            letter-spacing: 0.01em;
+        }
+        .top-nav .brand {
+            font-weight: 700;
+        }
+        .top-nav .links {
+            opacity: 0.9;
+        }
+        .hero-shell {
+            border: 1px solid rgba(153, 172, 214, 0.28);
+            border-radius: 18px;
+            padding: 1.55rem 1.25rem 1.35rem 1.25rem;
+            background: linear-gradient(180deg, rgba(14, 20, 37, 0.88), rgba(7, 10, 18, 0.92));
+            margin-bottom: 1.1rem;
+            box-shadow: 0 18px 44px rgba(3, 8, 20, 0.45);
+            position: relative;
+            overflow: hidden;
+        }
+        .hero-shell > * {
+            position: relative;
+            z-index: 1;
+        }
+        .hero-starfield {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .hero-star {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            border-radius: 50%;
+            background: rgba(236, 244, 255, 0.95);
+            box-shadow: 0 0 8px rgba(191, 214, 255, 0.8);
+            opacity: 0.62;
+            animation: aura_star_pulse 7.2s ease-in-out infinite;
+        }
+        .hero-star.s1  { top: 12%; left: -8%;  animation: aura_star_drift_x 31s linear infinite, aura_star_pulse 6.0s ease-in-out infinite; }
+        .hero-star.s2  { top: 18%; left: -20%; animation: aura_star_drift_diag 37s linear infinite, aura_star_pulse 8.2s ease-in-out infinite; width: 1px; height: 1px; }
+        .hero-star.s3  { top: 24%; left: -14%; animation: aura_star_drift_x 28s linear infinite, aura_star_pulse 7.0s ease-in-out infinite; }
+        .hero-star.s4  { top: 30%; left: -30%; animation: aura_star_drift_diag 34s linear infinite, aura_star_pulse 5.8s ease-in-out infinite; width: 3px; height: 3px; }
+        .hero-star.s5  { top: 38%; left: -12%; animation: aura_star_drift_x 26s linear infinite, aura_star_pulse 7.6s ease-in-out infinite; }
+        .hero-star.s6  { top: 46%; left: -24%; animation: aura_star_drift_diag 40s linear infinite, aura_star_pulse 8.6s ease-in-out infinite; width: 1px; height: 1px; }
+        .hero-star.s7  { top: 54%; left: -18%; animation: aura_star_drift_x 30s linear infinite, aura_star_pulse 6.4s ease-in-out infinite; }
+        .hero-star.s8  { top: 62%; left: -6%;  animation: aura_star_drift_diag 38s linear infinite, aura_star_pulse 8.0s ease-in-out infinite; }
+        .hero-star.s9  { top: 70%; left: -22%; animation: aura_star_drift_x 29s linear infinite, aura_star_pulse 6.1s ease-in-out infinite; width: 1px; height: 1px; }
+        .hero-star.s10 { top: 78%; left: -10%; animation: aura_star_drift_diag 35s linear infinite, aura_star_pulse 7.3s ease-in-out infinite; }
+        .hero-star.s11 { top: 16%; left: -34%; animation: aura_star_drift_x 33s linear infinite, aura_star_pulse 6.7s ease-in-out infinite; }
+        .hero-star.s12 { top: 86%; left: -28%; animation: aura_star_drift_diag 44s linear infinite, aura_star_pulse 9.0s ease-in-out infinite; width: 1px; height: 1px; }
+        .hero-star.s13 { top: 42%; left: -36%; animation: aura_star_drift_x 32s linear infinite, aura_star_pulse 7.8s ease-in-out infinite; }
+        .hero-star.s14 { top: 66%; left: -40%; animation: aura_star_drift_diag 39s linear infinite, aura_star_pulse 6.2s ease-in-out infinite; }
+        .hero-star.s15 { top: 8%;  left: -26%; animation: aura_star_drift_x 27s linear infinite, aura_star_pulse 5.9s ease-in-out infinite; width: 1px; height: 1px; }
+        .hero-star.s16 { top: 58%; left: -32%; animation: aura_star_drift_diag 42s linear infinite, aura_star_pulse 8.4s ease-in-out infinite; width: 3px; height: 3px; }
+        .hero-shooting {
+            position: absolute;
+            top: 22%;
+            left: -34%;
+            width: 42%;
+            height: 2px;
+            border-radius: 999px;
+            opacity: 0;
+            background: linear-gradient(
+                90deg,
+                rgba(236, 244, 255, 0),
+                rgba(236, 244, 255, 0.98),
+                rgba(236, 244, 255, 0)
+            );
+            filter: drop-shadow(0 0 7px rgba(188, 211, 255, 0.5));
+            animation: aura_star_shoot 19s ease-in-out infinite;
+        }
+        .hero-badge {
+            display: inline-block;
+            padding: 0.28rem 0.62rem;
+            border-radius: 999px;
+            border: 1px solid rgba(231, 205, 109, 0.6);
+            background: rgba(231, 205, 109, 0.14);
+            color: #f7ecb5;
+            font-size: 0.86rem;
+            font-weight: 700;
+            margin-bottom: 0.9rem;
+        }
+        .hero-title {
+            font-size: 1.88rem;
+            line-height: 1.2;
+            margin: 0 0 0.85rem 0;
+            color: #f3f6ff;
+            font-weight: 700;
+        }
+        .hero-subtitle {
+            font-size: 1.12rem;
+            color: #c8d4f7;
+            font-weight: 600;
+            margin-bottom: 0.86rem;
+        }
+        .hero-pills {
+            display: flex;
+            flex-wrap: wrap;
+            column-gap: 0.62rem;
+            row-gap: 0.72rem;
+            margin-top: 0.35rem;
+            margin-bottom: 1.35rem;
+        }
+        .hero-pill {
+            border: 1px solid rgba(137, 160, 209, 0.35);
+            border-radius: 999px;
+            padding: 0.48rem 1.02rem;
+            font-size: 1.05rem;
+            line-height: 1.25;
+            color: #dbe6ff;
+            background: rgba(29, 43, 77, 0.45);
+        }
+        .hero-pill .pill-label {
+            font-weight: 700;
+            color: #eef3ff;
+        }
+        .hero-cards {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.85rem;
+        }
+        .hero-card {
+            border: 1px solid rgba(117, 142, 195, 0.34);
+            border-radius: 13px;
+            padding: 0.88rem;
+            min-height: 84px;
+            background:
+                linear-gradient(145deg, rgba(37, 89, 170, 0.28), rgba(17, 27, 52, 0.82)),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.00));
+        }
+        .hero-card-title {
+            font-size: 1.0rem;
+            color: #e9efff;
+            font-weight: 700;
+            margin-bottom: 0.24rem;
+        }
+        .hero-card-text {
+            font-size: 0.96rem;
+            color: #c6d4f8;
+            line-height: 1.3;
+        }
+        h1, h2, h3, h4 {
+            font-weight: 700 !important;
+        }
+        h2, h3 {
+            margin-top: 0.9rem !important;
+            margin-bottom: 0.65rem !important;
+        }
+        [data-testid="stWidgetLabel"] p {
+            font-size: 1.08rem !important;
+            font-weight: 700 !important;
+        }
+        [data-testid="stMarkdownContainer"] p,
+        [data-testid="stMarkdownContainer"] li {
+            font-size: 1.02rem;
+        }
+        [data-testid="stMetricLabel"] p {
+            font-weight: 700 !important;
+            font-size: 1.02rem;
+        }
+        [data-testid="stMetricValue"] {
+            font-size: 1.65rem !important;
+            font-weight: 500 !important;
+        }
+        [data-testid="stMetricValue"] > div {
+            font-size: 1.65rem !important;
+            font-weight: 500 !important;
+        }
+        button[data-baseweb="tab"] {
+            font-size: 1.38rem !important;
+            font-weight: 700 !important;
+            padding-top: 1.08rem !important;
+            padding-bottom: 1.08rem !important;
+            padding-left: 1.55rem !important;
+            padding-right: 1.55rem !important;
+            min-height: 3.7rem !important;
+            border-radius: 12px !important;
+        }
+        @media (max-width: 900px) {
+            .hero-cards {
+                grid-template-columns: 1fr;
+            }
+        }
+        [data-testid="stSidebar"] {
+            border-right: 1px solid rgba(153, 172, 214, 0.25);
+        }
+        [data-testid="stMetric"] {
+            border: 1px solid rgba(137, 160, 209, 0.3);
+            border-radius: 13px;
+            padding: 0.6rem 0.75rem;
+            margin-bottom: 0.55rem;
+        }
+        .stTextInput, .stTextArea, .stSelectbox, .stSlider, .stCheckbox, .stNumberInput {
+            margin-bottom: 0.75rem;
+        }
+        .stCaption {
+            margin-top: 0.3rem;
+            margin-bottom: 0.7rem;
+        }
+        .stExpander {
+            margin-top: 0.6rem;
+            margin-bottom: 0.9rem;
+        }
+        .stButton {
+            margin-top: 0.35rem;
+            margin-bottom: 0.8rem;
+        }
+        [data-testid="stTabs"] [data-baseweb="tab-list"] {
+            margin-bottom: 0.85rem;
+            gap: 0.45rem;
+        }
+        [data-testid="stTabs"] [data-baseweb="tab-panel"] {
+            padding-top: 0.25rem;
+        }
+        button[kind="primary"] {
+            background: linear-gradient(180deg, #2f5af3, #2548c4) !important;
+            color: #ffffff !important;
+            border: 1px solid rgba(144, 173, 255, 0.9) !important;
+            font-weight: 700 !important;
+            text-shadow: none !important;
+        }
+        button[kind="primary"] p {
+            color: #ffffff !important;
+            font-weight: 700 !important;
+        }
+        button[kind="primary"]:hover {
+            background: linear-gradient(180deg, #2a52df, #1f3ca6) !important;
+            color: #ffffff !important;
+            border-color: rgba(165, 190, 255, 0.95) !important;
+        }
         .event-card {
             margin: 10px 0;
+            border: 1px solid rgba(137, 160, 209, 0.3);
+            border-radius: 12px;
+            padding: 12px;
+            background: rgba(10, 16, 29, 0.62);
         }
         .event-title {
             font-weight: 600;
+            color: #ebf1ff;
         }
         .muted {
-            opacity: 0.8;
+            color: #c7d4f7;
             font-size: 0.92rem;
         }
         </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_hero(ingest_summary: dict[str, Any], model_info: dict[str, Any]) -> None:
+    model = str(ingest_summary.get("detector_model", "-")).strip()
+    backend = str(ingest_summary.get("detector_backend", "-")).strip()
+    detector_runtime = f"{model}/{backend}" if model and model != "-" and backend and backend != "-" else ""
+    detector_hint = str(model_info.get("detector", "")).strip()
+    if detector_hint and detector_hint != "-":
+        detector_model = html.escape(detector_hint)
+    elif detector_runtime:
+        detector_model = html.escape(detector_runtime)
+    else:
+        detector_model = "yolov11/qnn"
+    caption_model = html.escape(str(model_info.get("caption", DEFAULT_CAPTION_MODEL)))
+    semantic_model = html.escape(str(model_info.get("semantic", DEFAULT_SEMANTIC_MODEL)))
+    vqa_model = html.escape(str(model_info.get("vqa", DEFAULT_VQA_MODEL)))
+    llm_model_raw = str(model_info.get("llm", "off")).strip()
+    llm_pill = (
+        f"<span class=\"hero-pill\"><span class=\"pill-label\">LLM:</span> {html.escape(llm_model_raw)}</span>"
+        if llm_model_raw and llm_model_raw.lower() not in {"off", "false", "disabled", "none", "-"}
+        else ""
+    )
+
+    st.markdown(
+        f"""
+        <div class="top-nav">
+          <div class="brand">Aura Vision</div>
+          <div class="links">Ingest • Mind Palace • Offline Local</div>
+        </div>
+        <div class="hero-shell">
+          <div class="hero-starfield" aria-hidden="true">
+            <span class="hero-star s1"></span>
+            <span class="hero-star s2"></span>
+            <span class="hero-star s3"></span>
+            <span class="hero-star s4"></span>
+            <span class="hero-star s5"></span>
+            <span class="hero-star s6"></span>
+            <span class="hero-star s7"></span>
+            <span class="hero-star s8"></span>
+            <span class="hero-star s9"></span>
+            <span class="hero-star s10"></span>
+            <span class="hero-star s11"></span>
+            <span class="hero-star s12"></span>
+            <span class="hero-star s13"></span>
+            <span class="hero-star s14"></span>
+            <span class="hero-star s15"></span>
+            <span class="hero-star s16"></span>
+            <span class="hero-shooting"></span>
+          </div>
+          <div class="hero-badge">Offline-ready local video intelligence</div>
+          <div class="hero-title">Unlock efficient visual reasoning from every ingested frame.</div>
+          <div class="hero-pills">
+            <span class="hero-pill"><span class="pill-label">Detector:</span> {detector_model}</span>
+            <span class="hero-pill"><span class="pill-label">Caption:</span> {caption_model}</span>
+            <span class="hero-pill"><span class="pill-label">Semantic:</span> {semantic_model}</span>
+            <span class="hero-pill"><span class="pill-label">VQA:</span> {vqa_model}</span>
+            {llm_pill}
+          </div>
+          <div class="hero-cards">
+            <div class="hero-card">
+              <div class="hero-card-title">Ingest</div>
+              <div class="hero-card-text">Process video into structured memory with NPU-backed detection.</div>
+            </div>
+            <div class="hero-card">
+              <div class="hero-card-title">Reason</div>
+              <div class="hero-card-text">Retrieve semantic evidence and generate grounded visual answers.</div>
+            </div>
+            <div class="hero-card">
+              <div class="hero-card-title">Defend</div>
+              <div class="hero-card-text">Use strict evidence mode for abstention when support is weak.</div>
+            </div>
+          </div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
@@ -556,6 +939,7 @@ def main() -> None:
         page_icon=":camera_with_flash:",
         layout="wide",
     )
+    _inject_styles()
 
     if "last_video_path" not in st.session_state:
         st.session_state.last_video_path = ""
@@ -571,6 +955,14 @@ def main() -> None:
         st.session_state.last_ingest_summary = {}
     if "ingest_timeout_seconds" not in st.session_state:
         st.session_state.ingest_timeout_seconds = 180
+    if "model_info" not in st.session_state:
+        st.session_state.model_info = {
+            "detector": "yolov11/qnn",
+            "caption": DEFAULT_CAPTION_MODEL,
+            "semantic": DEFAULT_SEMANTIC_MODEL,
+            "vqa": DEFAULT_VQA_MODEL,
+            "llm": "off",
+        }
 
     with st.sidebar:
         st.header("Session")
@@ -612,13 +1004,16 @@ def main() -> None:
                 else:
                     st.success("Setup looks good.")
 
+    _render_hero(st.session_state.last_ingest_summary, st.session_state.model_info)
+
     tabs = st.tabs(["Ingest", "Mind Palace"])
 
     with tabs[0]:
         st.subheader("Ingest Video")
-        video_path = st.text_input(
+        video_path = st.text_area(
             "Video path",
             value=st.session_state.last_video_path,
+            height=120,
             placeholder="/absolute/path/to/video.mp4",
         )
 
@@ -642,7 +1037,7 @@ def main() -> None:
         frame_max_width = 960
         frame_jpeg_quality = 70
         caption_every_n_frames = 1
-        caption_model = "nlpconnect/vit-gpt2-image-captioning"
+        caption_model = DEFAULT_CAPTION_MODEL
 
         with st.expander("Advanced ingest options", expanded=False):
             c1, c2, c3 = st.columns(3)
@@ -684,6 +1079,11 @@ def main() -> None:
                     if providers:
                         st.caption(f"Available providers: {', '.join(providers)}")
                     return
+                selected_caption_model = caption_model.strip() or DEFAULT_CAPTION_MODEL
+                st.session_state.model_info["caption"] = (
+                    selected_caption_model if bool(caption_frames) else "disabled"
+                )
+                st.session_state.model_info["detector"] = f"{prefer_model}/{runtime}"
                 cmd = _build_ingest_command(
                     python_exec=python_exec,
                     extractor_dir=extractor_dir,
@@ -699,7 +1099,7 @@ def main() -> None:
                     frame_max_width=int(frame_max_width),
                     frame_jpeg_quality=int(frame_jpeg_quality),
                     caption_frames=bool(caption_frames),
-                    caption_model=caption_model.strip() or "nlpconnect/vit-gpt2-image-captioning",
+                    caption_model=selected_caption_model,
                     caption_every_n_frames=int(caption_every_n_frames),
                     thumb_size=int(thumb_size),
                     crop_padding=int(crop_padding),
@@ -730,6 +1130,7 @@ def main() -> None:
                     detector_input_size = summary.get("detector_input_size")
                     sample_fps_used = summary.get("sample_fps")
                     if model and backend:
+                        st.session_state.model_info["detector"] = f"{model}/{backend}"
                         st.caption(
                             f"Detector runtime used: {model}/{backend}"
                             + (
@@ -782,9 +1183,10 @@ def main() -> None:
         st.caption(
             "Ask open-ended questions over frame memory and evidence."
         )
-        mp_question = st.text_input(
-            "Question (open-ended)",
+        mp_question = st.text_area(
+            "Question",
             value="What happened near the dining table?",
+            height=120,
             help="Examples: 'What did I place near the table?', 'What objects were visible around second 10?'",
         )
         # Defaults (all controls exposed under Advanced).
@@ -827,6 +1229,11 @@ def main() -> None:
             elif not mp_question.strip():
                 st.error("Enter a question.")
             else:
+                st.session_state.model_info["llm"] = (
+                    (llm_model.strip() or "enabled (default)")
+                    if bool(llm_on)
+                    else "off"
+                )
                 cmd = _build_query_command(
                     python_exec=python_exec,
                     extractor_dir=extractor_dir,
@@ -850,16 +1257,19 @@ def main() -> None:
                 else:
                     payload = result.payload if isinstance(result.payload, dict) else {}
                     answer_text = str(payload.get("answer", ""))
-                    i1, i2, i3 = st.columns(3)
-                    i1.metric("Intent", str(payload.get("intent", "-")))
+                    answer_main, answer_details_md = _split_answer_text(answer_text)
+                    i1, i2 = st.columns([2.2, 1.0])
+                    i1.metric("Answer", answer_main or "-")
                     i2.metric("Confidence", str(payload.get("confidence", "-")))
-                    i3.metric("Primary label", str(payload.get("primary_label", "-")))
+                    if answer_main:
+                        # Streamlit metric values can truncate long text; render full answer below.
+                        st.markdown(f"**Full answer:** {answer_main}")
                     if answer_text:
-                        st.markdown("#### Answer")
                         if bool(payload.get("abstained")):
                             st.warning(answer_text)
                         else:
-                            st.markdown(answer_text)
+                            if answer_details_md:
+                                st.markdown(answer_details_md)
                     if bool(payload.get("abstained")) and payload.get("abstain_reason"):
                         st.caption(f"Abstain reason: {payload.get('abstain_reason')}")
                     llm_meta = payload.get("llm", {})
@@ -885,23 +1295,59 @@ def main() -> None:
                             )
                     rows = payload.get("evidence", [])
                     citations_md = str(payload.get("citations_markdown", "")).strip()
-                    if citations_md and "### Evidence" not in answer_text:
-                        st.markdown(citations_md)
                     if isinstance(rows, list) and rows:
                         st.markdown("#### Evidence")
                         for idx, row in enumerate(rows, start=1):
-                            st.markdown(
-                                f"**#{idx}** sec={row.get('video_second')} "
-                                f"label={row.get('label')} color={row.get('detected_color')} "
-                                f"context={row.get('context')}"
-                            )
+                            sec = row.get("video_second")
+                            objects_text = str(row.get("label", "")).strip() or "unknown"
+                            if len(objects_text) > 110:
+                                objects_text = objects_text[:107].rstrip() + "..."
+
+                            context_text = str(row.get("context", "")).strip()
+                            caption_text = str(row.get("caption_text", "")).strip()
+                            if not caption_text and "Caption:" in context_text:
+                                caption_text = context_text.split("Caption:", 1)[1].strip()
+                            scene_text = context_text.split("Caption:", 1)[0].strip() if context_text else ""
+                            scene_text = " ".join(scene_text.split())
+                            caption_text = " ".join(caption_text.split())
+                            if len(scene_text) > 160:
+                                scene_text = scene_text[:157].rstrip() + "..."
+                            if len(caption_text) > 160:
+                                caption_text = caption_text[:157].rstrip() + "..."
+
                             frame_path = str(row.get("frame_path", "")).strip()
                             thumb_path = str(row.get("thumbnail_path", "")).strip()
-                            c1, c2 = st.columns(2)
-                            if frame_path and Path(frame_path).exists():
-                                c1.image(frame_path, caption="frame", use_container_width=True)
-                            if thumb_path and Path(thumb_path).exists():
-                                c2.image(thumb_path, caption="thumbnail", use_container_width=False, width=180)
+
+                            st.markdown(f"**E{idx} - second {sec}**")
+                            c1, c2 = st.columns([0.8, 1.2], gap="small")
+                            with c1:
+                                shown = False
+                                if frame_path and Path(frame_path).exists():
+                                    st.image(frame_path, caption=f"Evidence frame E{idx}", use_container_width=True)
+                                    shown = True
+                                elif thumb_path and Path(thumb_path).exists():
+                                    st.image(thumb_path, caption=f"Evidence thumbnail E{idx}", use_container_width=True)
+                                    shown = True
+                                if not shown:
+                                    st.caption("No local evidence image found.")
+
+                            with c2:
+                                st.markdown(f"**Objects:** {objects_text}")
+                                if caption_text:
+                                    st.markdown(f"**Caption:** {caption_text}")
+                                if scene_text:
+                                    st.markdown(f"**Context:** {scene_text}")
+                                detected_color = str(row.get("detected_color", "")).strip()
+                                if detected_color and detected_color.lower() not in {"unknown", "none", "n/a"}:
+                                    st.markdown(f"**Color:** {detected_color}")
+                                det_conf = row.get("confidence")
+                                if det_conf is not None:
+                                    st.markdown(f"**Detection confidence:** {det_conf}")
+
+                            if idx < len(rows):
+                                st.divider()
+                    elif citations_md and "### Evidence" not in answer_text:
+                        st.markdown(citations_md)
 
 
 if __name__ == "__main__":

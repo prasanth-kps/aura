@@ -684,13 +684,51 @@ def _extract_second_hint(question: str) -> int | None:
         return None
 
 
+def _parse_relation_anchor(
+    question: str,
+    aliases: dict[str, str] | None = None,
+) -> tuple[str | None, str | None, str | None]:
+    """Parse question for relation + anchor. Returns (relation, anchor_canonical, anchor_display)."""
+    q = _normalize_spaces(question).lower()
+    m = re.search(r"\b(?:on\s+top\s+of|on)\s+(?:the\s+)?(\w+)", q, re.IGNORECASE)
+    if m:
+        raw_anchor = m.group(1).strip()
+        return "on_top_of", canonicalize_label(raw_anchor, aliases=aliases), raw_anchor
+    m = re.search(r"\b(?:near|next\s+to)\s+(?:the\s+)?(\w+)", q, re.IGNORECASE)
+    if m:
+        raw_anchor = m.group(1).strip()
+        return "near", canonicalize_label(raw_anchor, aliases=aliases), raw_anchor
+    m = re.search(r"\b(?:left\s+of)\s+(?:the\s+)?(\w+)", q, re.IGNORECASE)
+    if m:
+        raw_anchor = m.group(1).strip()
+        return "left_of", canonicalize_label(raw_anchor, aliases=aliases), raw_anchor
+    m = re.search(r"\b(?:right\s+of)\s+(?:the\s+)?(\w+)", q, re.IGNORECASE)
+    if m:
+        raw_anchor = m.group(1).strip()
+        return "right_of", canonicalize_label(raw_anchor, aliases=aliases), raw_anchor
+    m = re.search(r"\b(?:above)\s+(?:the\s+)?(\w+)", q, re.IGNORECASE)
+    if m:
+        raw_anchor = m.group(1).strip()
+        return "above", canonicalize_label(raw_anchor, aliases=aliases), raw_anchor
+    m = re.search(r"\b(?:below)\s+(?:the\s+)?(\w+)", q, re.IGNORECASE)
+    if m:
+        raw_anchor = m.group(1).strip()
+        return "below", canonicalize_label(raw_anchor, aliases=aliases), raw_anchor
+    return None, None, None
+
+
 def _detect_question_intent(question: str) -> str:
     q = _normalize_spaces(question)
     if re.search(r"\b(how\s+many|number\s+of)\b", q) and re.search(r"\b(can\s+sit|seating|seats?)\b", q):
         return "capacity"
     if re.search(r"\bhow\s+many\b|\bcount\b|\bnumber\s+of\b", q):
         return "count"
-    if re.search(r"\bwhat\s+objects?\b|\bwhich\s+objects?\b|\blist\b", q):
+    if re.search(
+        r"\bwhat\s+objects?\b|\bwhich\s+objects?\b|\blist\b"
+        r"|\bwhat\s+is\s+visible\b|\bwhat\'?s\s+visible\b"
+        r"|\bwhat\s+do\s+you\s+see\b|\bwhat\'?s\s+in\s+(?:the\s+)?room\b",
+        q,
+    ):
         return "list_objects"
     if re.search(r"\bwhat\s+color\b|\bcolor\s+of\b", q):
         return "color"
@@ -817,7 +855,8 @@ def _event_evidence_row(
 
 def _frame_evidence_row(frame_record: dict[str, Any]) -> dict[str, Any]:
     labels = frame_record.get("labels")
-    label_text = ", ".join(labels) if isinstance(labels, list) else ""
+    labels_list = list(labels) if isinstance(labels, list) else []
+    label_text = ", ".join(labels_list) if labels_list else ""
     summary_text = str(frame_record.get("summary_text", "")).strip()
     raw_caption = frame_record.get("caption_text")
     caption_text = ""
@@ -831,6 +870,7 @@ def _frame_evidence_row(frame_record: dict[str, Any]) -> dict[str, Any]:
         "video_second": int(frame_record.get("video_second", -1)),
         "video_time_s": frame_record.get("video_time_s"),
         "label": label_text,
+        "labels_list": labels_list,
         "detected_color": None,
         "context": merged_context,
         "caption_text": caption_text,
@@ -887,32 +927,45 @@ def _frame_summary_from_events(
     return f"Visible: {label_text}. Contexts: {context_text}."
 
 
+def _format_structured_answer(
+    main_answer: str,
+    details: list[str] | None = None,
+    confidence_label: str | None = None,
+) -> str:
+    lines: list[str] = [f"**{main_answer}**", ""]
+    for detail in details or []:
+        lines.append(f"- {detail}")
+    if confidence_label:
+        lines.append(f"- Confidence: `{confidence_label}`")
+    return "\n".join(lines)
+
+
 def _build_citations_markdown(rows: list[dict[str, Any]], max_rows: int) -> str:
     lines: list[str] = ["### Evidence"]
     for idx, ev in enumerate(rows[:max_rows], start=1):
         sec = ev.get("video_second")
-        label = ev.get("label") or "unknown"
-        color = ev.get("detected_color") or "unknown"
-        ctx = ev.get("context") or "unknown"
-        conf = ev.get("confidence")
-        conf_text = "n/a" if conf is None else str(conf)
-        frame_path = str(ev.get("frame_path") or "").strip()
-        thumb_path = str(ev.get("thumbnail_path") or "").strip()
-        parts = [
-            f"- [E{idx}] second `{sec}`",
-            f"`{label}`",
-            f"color `{color}`",
-            f"context `{ctx}`",
-            f"confidence `{conf_text}`",
-        ]
-        links: list[str] = []
-        if frame_path:
-            links.append(f"[frame]({frame_path})")
-        if thumb_path:
-            links.append(f"[thumbnail]({thumb_path})")
-        if links:
-            parts.append(" | " + " ".join(links))
-        lines.append(", ".join(parts))
+        raw_label = str(ev.get("label") or "").strip()
+        label_items = [p.strip() for p in raw_label.split(",") if p.strip()]
+        if not label_items:
+            label_text = "unknown"
+        elif len(label_items) <= 6:
+            label_text = ", ".join(label_items)
+        else:
+            label_text = ", ".join(label_items[:6]) + ", ..."
+
+        caption = str(ev.get("caption_text") or "").strip()
+        if not caption:
+            ctx = str(ev.get("context") or "").strip()
+            if "Caption:" in ctx:
+                caption = ctx.split("Caption:", 1)[1].strip()
+        caption = _normalize_spaces(caption)
+        if len(caption) > 120:
+            caption = caption[:117].rstrip() + "..."
+
+        line = f"- **E{idx}** second `{sec}` - objects: `{label_text}`"
+        if caption:
+            line += f"; caption: `{caption}`"
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -927,6 +980,45 @@ def _row_text_for_semantic(row: dict[str, Any]) -> str:
             str(row.get("anchor_label", "")),
         ]
     ).strip()
+
+
+def _labels_for_relation_anchor(
+    events: list[dict[str, Any]],
+    relation: str,
+    anchor: str,
+    aliases: dict[str, str] | None = None,
+) -> list[str]:
+    """Return sorted list of object labels that have the given relation to the anchor (e.g. on_top_of table)."""
+    seen: set[str] = set()
+    for ev in events:
+        ev_rel = str(ev.get("relation", "")).strip().lower()
+        ev_anchor = canonicalize_label(str(ev.get("anchor_label", "")), aliases=aliases)
+        if ev_rel != relation or ev_anchor != anchor:
+            continue
+        lab = canonicalize_label(str(ev.get("label", "")), aliases=aliases)
+        if lab:
+            seen.add(lab)
+    return sorted(seen)
+
+
+def _aggregate_labels_from_evidence(evidence: list[dict[str, Any]]) -> list[str]:
+    """Collect, dedupe, and sort all object labels from evidence rows (for list_objects intent)."""
+    seen: set[str] = set()
+    for row in evidence:
+        labels_list = row.get("labels_list")
+        if isinstance(labels_list, list):
+            for lab in labels_list:
+                s = str(lab).strip()
+                if s:
+                    seen.add(s)
+        else:
+            label_str = str(row.get("label", "")).strip()
+            if label_str:
+                for part in label_str.split(","):
+                    s = part.strip()
+                    if s:
+                        seen.add(s)
+    return sorted(seen)
 
 
 def _aggregate_visual_answers(evidence: list[dict[str, Any]]) -> tuple[str | None, float]:
@@ -965,7 +1057,7 @@ def ask_memory(
     if limit <= 0:
         limit = 5
 
-    intent = "open_visual"
+    intent = _detect_question_intent(question)
     q_tokens = _tokenize_query(question)
     if not q_tokens:
         q_tokens = _tokenize_query(normalize_query_label(question, aliases=aliases))
@@ -1003,6 +1095,7 @@ def ask_memory(
                 "video_second": sec,
                 "video_time_s": frame_events[0].get("video_time_s") if frame_events else None,
                 "label": ", ".join(labels),
+                "labels_list": list(labels),
                 "detected_color": None,
                 "context": _frame_summary_from_events(frame_id, events_by_frame),
                 "caption_text": "",
@@ -1108,24 +1201,78 @@ def ask_memory(
             },
         }
 
-    best_answer, best_answer_score = _aggregate_visual_answers(evidence)
     top_score = float(evidence[0].get("score", (0.0, -1))[0])
     confidence = _confidence_band(min(1.0, top_score / 6.0))
-    seconds = [str(ev.get("video_second")) for ev in evidence[:3]]
-    seconds_text = ", ".join(seconds)
-    if best_answer:
-        answer = (
-            f"Most likely answer: `{best_answer}` (visual confidence aggregate: {best_answer_score:.2f}). "
-            f"Grounded in frames around seconds {seconds_text}."
-        )
+    if intent == "list_objects":
+        relation, anchor, anchor_display = _parse_relation_anchor(question, aliases=aliases)
+        if relation and anchor:
+            aggregated_labels = _labels_for_relation_anchor(events, relation, anchor, aliases=aliases)
+            display = anchor_display or anchor
+            relation_phrase = {
+                "on_top_of": "on the",
+                "near": "near the",
+                "left_of": "to the left of the",
+                "right_of": "to the right of the",
+                "above": "above the",
+                "below": "below the",
+            }.get(relation, "on the")
+            if aggregated_labels:
+                answer = _format_structured_answer(
+                    main_answer=f"Objects {relation_phrase} {display}: {', '.join(aggregated_labels)}",
+                    confidence_label=confidence,
+                )
+            else:
+                answer = _format_structured_answer(
+                    main_answer=f"No objects found {relation_phrase} {display} in memory",
+                    confidence_label=confidence,
+                )
+        else:
+            aggregated_labels = _aggregate_labels_from_evidence(evidence)
+            if aggregated_labels:
+                answer = _format_structured_answer(
+                    main_answer=f"Visible objects: {', '.join(aggregated_labels)}",
+                    confidence_label=confidence,
+                )
+            else:
+                best_answer, best_answer_score = _aggregate_visual_answers(evidence)
+                if best_answer:
+                    answer = _format_structured_answer(
+                        main_answer=best_answer,
+                        details=[f"Visual confidence aggregate: `{best_answer_score:.2f}`"],
+                        confidence_label=confidence,
+                    )
+                else:
+                    lines = []
+                    for idx, ev in enumerate(evidence[:3], start=1):
+                        sec = ev.get("video_second")
+                        label = ev.get("label")
+                        ctx = ev.get("context")
+                        lines.append(f"{idx}) second {sec}: {label} in context '{ctx}'")
+                    answer = (
+                        "**Could not produce a single concise result.**\n\n"
+                        "### Best grounded evidence\n"
+                        + "\n".join(f"- {line}" for line in lines)
+                    )
     else:
-        lines = []
-        for idx, ev in enumerate(evidence[:3], start=1):
-            sec = ev.get("video_second")
-            label = ev.get("label")
-            ctx = ev.get("context")
-            lines.append(f"{idx}) second {sec}: {label} in context '{ctx}'")
-        answer = "Best grounded evidence from video memory:\n" + "\n".join(lines)
+        best_answer, best_answer_score = _aggregate_visual_answers(evidence)
+        if best_answer:
+            answer = _format_structured_answer(
+                main_answer=best_answer,
+                details=[f"Visual confidence aggregate: `{best_answer_score:.2f}`"],
+                confidence_label=confidence,
+            )
+        else:
+            lines = []
+            for idx, ev in enumerate(evidence[:3], start=1):
+                sec = ev.get("video_second")
+                label = ev.get("label")
+                ctx = ev.get("context")
+                lines.append(f"{idx}) second {sec}: {label} in context '{ctx}'")
+            answer = (
+                "**Could not produce a single concise result.**\n\n"
+                "### Best grounded evidence\n"
+                + "\n".join(f"- {line}" for line in lines)
+            )
 
     citations_markdown = _build_citations_markdown(evidence, max_rows=min(5, limit))
     llm_meta: dict[str, Any] = {"enabled": use_llm, "used": False}
