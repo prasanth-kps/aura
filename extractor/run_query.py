@@ -5,13 +5,16 @@ import json
 from pathlib import Path
 
 from src.search import (
+    ask_memory,
     available_instances,
     available_labels,
     describe_color,
     is_color_query,
     latest,
     load_events,
+    load_frame_records,
     resolve_memory_path,
+    resolve_frames_path,
     timeline,
     where_is,
 )
@@ -88,6 +91,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional instance_id to target a specific tracked object",
     )
+    p_ask = subparsers.add_parser("ask", help="Open-ended memory question over stored evidence")
+    p_ask.add_argument("--question", required=True, help="Natural question")
+    p_ask.add_argument("--limit", type=int, default=5, help="Max evidence rows to return")
+    p_ask.add_argument("--llm", action="store_true", help="Enable LLM synthesis over retrieved evidence")
+    p_ask.add_argument("--llm-model", default=None, help="Optional LLM model name")
+    p_ask.add_argument("--llm-base-url", default=None, help="Optional OpenAI-compatible base URL")
+    p_ask.add_argument("--llm-api-key", default=None, help="Optional API key (overrides env)")
 
     subparsers.add_parser("labels", help="List detected labels in memory log")
     p_instances = subparsers.add_parser("instances", help="List instance IDs")
@@ -148,6 +158,41 @@ def main() -> None:
         for idx, event in enumerate(rows, start=1):
             print(f"[{idx}] sec={event.get('video_second')} context={event.get('context')}")
             print(f"    thumb={event.get('thumbnail_path')}")
+        return
+
+    if args.command == "ask":
+        frame_memory_path = (
+            resolve_frames_path(Path(args.out), Path(args.video))
+            if args.video
+            else Path(str(memory_path).replace(".events.jsonl", ".frames.jsonl"))
+        )
+        frame_records = load_frame_records(frame_memory_path)
+        result = ask_memory(
+            events,
+            frame_records,
+            args.question,
+            limit=args.limit,
+            use_llm=args.llm,
+            llm_model=args.llm_model,
+            llm_base_url=args.llm_base_url,
+            llm_api_key=args.llm_api_key,
+        )
+        if args.json:
+            print(json.dumps(result, indent=2))
+            return
+        print(result["answer"])
+        citations_md = str(result.get("citations_markdown", "")).strip()
+        if citations_md and "### Evidence" not in str(result.get("answer", "")):
+            print(citations_md)
+        for idx, ev in enumerate(result.get("evidence", []), start=1):
+            print(
+                f"[{idx}] sec={ev.get('video_second')} label={ev.get('label')} "
+                f"context={ev.get('context')} color={ev.get('detected_color')}"
+            )
+            if ev.get("frame_path"):
+                print(f"    frame={ev.get('frame_path')}")
+            if ev.get("thumbnail_path"):
+                print(f"    thumb={ev.get('thumbnail_path')}")
         return
 
     if args.command == "labels":

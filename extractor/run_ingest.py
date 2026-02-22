@@ -41,6 +41,24 @@ def main() -> None:
         default=960,
         help="Detector input size (e.g., 640 or 960)",
     )
+    parser.add_argument(
+        "--save-full-frames",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Persist compressed full-frame snapshots for open-ended memory queries",
+    )
+    parser.add_argument(
+        "--frame-max-width",
+        type=int,
+        default=960,
+        help="Max width for persisted full-frame snapshots",
+    )
+    parser.add_argument(
+        "--frame-jpeg-quality",
+        type=int,
+        default=70,
+        help="JPEG quality for persisted full-frame snapshots",
+    )
     parser.add_argument("--thumb-size", type=int, default=50, help="Thumbnail size in pixels")
     parser.add_argument("--crop-padding", type=int, default=8, help="Crop padding around bbox")
     parser.add_argument("--jpeg-quality", type=int, default=75, help="JPEG quality for thumbnails")
@@ -100,6 +118,9 @@ def main() -> None:
         thumb_size=args.thumb_size,
         crop_padding=args.crop_padding,
         jpeg_quality=args.jpeg_quality,
+        save_full_frames=args.save_full_frames,
+        frame_max_width=args.frame_max_width,
+        frame_jpeg_quality=args.frame_jpeg_quality,
         anchor_classes=anchor_labels,
         include_labels=include_labels,
         exclude_labels=exclude_labels,
@@ -114,11 +135,16 @@ def main() -> None:
     print("Ingestion complete.")
     print(f"Processed samples: {summary['processed_seconds']} @ {summary.get('sample_fps')} FPS")
     print(f"Events written: {summary['events_written']}")
+    print(f"Frames written: {summary.get('frames_written', 0)}")
     print(f"Detector input size: {summary.get('detector_input_size')}")
     print(f"Detector model/runtime: {summary.get('detector_model')} / {summary.get('detector_backend')}")
     print(
         "Memory log: "
         f"{(Path(args.out) / 'memory' / (Path(args.video).stem + '.events.jsonl'))}"
+    )
+    print(
+        "Frame memory log: "
+        f"{(Path(args.out) / 'memory' / (Path(args.video).stem + '.frames.jsonl'))}"
     )
 
 

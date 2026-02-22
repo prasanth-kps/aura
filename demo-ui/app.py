@@ -59,6 +59,11 @@ def _parse_ingest_summary(stdout: str) -> dict[str, Any]:
                 out["events_written"] = int(line.split(":", 1)[1].strip())
             except ValueError:
                 pass
+        elif line.startswith("Frames written:"):
+            try:
+                out["frames_written"] = int(line.split(":", 1)[1].strip())
+            except ValueError:
+                pass
         elif line.startswith("Detector input size:"):
             try:
                 out["detector_input_size"] = int(line.split(":", 1)[1].strip())
@@ -440,6 +445,9 @@ def _build_ingest_command(
     iou: float,
     sample_fps: float,
     input_size: int,
+    save_full_frames: bool,
+    frame_max_width: int,
+    frame_jpeg_quality: int,
     thumb_size: int,
     crop_padding: int,
     jpeg_quality: int,
@@ -467,6 +475,10 @@ def _build_ingest_command(
         str(sample_fps),
         "--input-size",
         str(input_size),
+        "--frame-max-width",
+        str(frame_max_width),
+        "--frame-jpeg-quality",
+        str(frame_jpeg_quality),
         "--thumb-size",
         str(thumb_size),
         "--crop-padding",
@@ -482,6 +494,10 @@ def _build_ingest_command(
     ]
     if reset_output:
         cmd.append("--reset-output")
+    if save_full_frames:
+        cmd.append("--save-full-frames")
+    else:
+        cmd.append("--no-save-full-frames")
     return cmd
 
 
@@ -492,6 +508,11 @@ def _build_query_command(
     video_path: str,
     command: str,
     label_or_query: str | None = None,
+    question: str | None = None,
+    use_llm: bool = False,
+    llm_model: str | None = None,
+    llm_base_url: str | None = None,
+    llm_api_key: str | None = None,
     instance_id: str | None = None,
     limit: int | None = None,
 ) -> list[str]:
@@ -507,6 +528,16 @@ def _build_query_command(
     ]
     if label_or_query is not None:
         cmd.extend(["--label", label_or_query])
+    if question is not None:
+        cmd.extend(["--question", question])
+    if use_llm:
+        cmd.append("--llm")
+    if llm_model:
+        cmd.extend(["--llm-model", llm_model])
+    if llm_base_url:
+        cmd.extend(["--llm-base-url", llm_base_url])
+    if llm_api_key:
+        cmd.extend(["--llm-api-key", llm_api_key])
     if instance_id:
         cmd.extend(["--instance-id", instance_id])
     if limit is not None:
@@ -658,7 +689,7 @@ def main() -> None:
             help="Ingest process is force-terminated after this duration to avoid hangs.",
         )
 
-    tabs = st.tabs(["Ingest", "Ask", "Timeline", "Explore"])
+    tabs = st.tabs(["Ingest", "Ask", "Timeline", "Explore", "Mind Palace"])
 
     with tabs[0]:
         st.subheader("1) Ingest Video")
@@ -690,6 +721,12 @@ def main() -> None:
         track_center_dist_ratio = st.slider(
             "Track center-dist ratio", min_value=0.02, max_value=0.8, value=0.12, step=0.02
         )
+        c13, c14, c15 = st.columns(3)
+        save_full_frames = c13.checkbox("Save full frames (mind palace)", value=True)
+        frame_max_width = c14.selectbox("Frame max width", [640, 960, 1280], index=1)
+        frame_jpeg_quality = c15.number_input(
+            "Frame JPEG quality", min_value=40, max_value=100, value=70, step=1
+        )
 
         if st.button("Run ingestion", type="primary", use_container_width=True):
             st.session_state.last_video_path = video_path.strip()
@@ -713,6 +750,9 @@ def main() -> None:
                     iou=iou,
                     sample_fps=sample_fps,
                     input_size=int(input_size),
+                    save_full_frames=save_full_frames,
+                    frame_max_width=int(frame_max_width),
+                    frame_jpeg_quality=int(frame_jpeg_quality),
                     thumb_size=int(thumb_size),
                     crop_padding=int(crop_padding),
                     jpeg_quality=int(jpeg_quality),
@@ -752,9 +792,10 @@ def main() -> None:
                         )
 
                     # Demo-focused performance summary.
-                    s1, s2, s3, s4 = st.columns(4)
+                    s1, s2, s3, s4, s5 = st.columns(5)
                     processed_seconds = summary.get("processed_seconds")
                     events_written = summary.get("events_written")
+                    frames_written = summary.get("frames_written")
                     s1.metric("Runtime backend", f"{model}/{backend}" if model and backend else "-")
                     s2.metric(
                         "Processed samples",
@@ -764,7 +805,11 @@ def main() -> None:
                         "Events written",
                         str(events_written) if events_written is not None else "-",
                     )
-                    s4.metric("Ingest wall time (s)", f"{result.elapsed_seconds:.2f}")
+                    s4.metric(
+                        "Frames written",
+                        str(frames_written) if frames_written is not None else "-",
+                    )
+                    s5.metric("Ingest wall time (s)", f"{result.elapsed_seconds:.2f}")
 
                     if isinstance(events_written, int) and result.elapsed_seconds > 0:
                         st.caption(
@@ -971,6 +1016,97 @@ def main() -> None:
         if st.session_state.last_cmd:
             with st.expander("Last command"):
                 st.code(" ".join(st.session_state.last_cmd))
+
+    with tabs[4]:
+        st.subheader("5) Mind Palace Q&A")
+        st.caption(
+            "Ask open-ended questions over full-frame memory + object events. "
+            "This retrieves evidence rows and summarizes the best matches."
+        )
+        mp_question = st.text_input(
+            "Question (open-ended)",
+            value="What happened near the dining table?",
+            help="Examples: 'What did I place near the table?', 'What objects were visible around second 10?'",
+        )
+        mp_limit = st.slider("Evidence limit", min_value=1, max_value=15, value=5, step=1)
+        llm_on = st.checkbox("Use LLM synthesis", value=False)
+        c1, c2 = st.columns(2)
+        llm_model = c1.text_input("LLM model (optional)", value="", placeholder="gpt-4o-mini")
+        llm_base_url = c2.text_input(
+            "LLM base URL (optional)",
+            value="",
+            placeholder="https://api.openai.com/v1",
+        )
+        llm_api_key = st.text_input(
+            "LLM API key (optional)",
+            value="",
+            type="password",
+            help="If empty, extractor uses AURA_LLM_API_KEY env var.",
+        )
+
+        if st.button("Ask memory", type="primary", use_container_width=True):
+            problems = _validate_paths(python_exec, extractor_dir)
+            if problems:
+                for p in problems:
+                    st.error(p)
+            elif not st.session_state.last_video_path:
+                st.error("Run ingestion first or set a video path in the Ingest tab.")
+            elif not mp_question.strip():
+                st.error("Enter a question.")
+            else:
+                cmd = _build_query_command(
+                    python_exec=python_exec,
+                    extractor_dir=extractor_dir,
+                    out_dir=out_dir,
+                    video_path=st.session_state.last_video_path,
+                    command="ask",
+                    question=mp_question.strip(),
+                    use_llm=llm_on,
+                    llm_model=llm_model.strip() or None,
+                    llm_base_url=llm_base_url.strip() or None,
+                    llm_api_key=llm_api_key.strip() or None,
+                    limit=int(mp_limit),
+                )
+                with st.spinner("Searching memory evidence..."):
+                    result = _run_command(cmd, cwd=extractor_dir, expect_json=True)
+
+                st.session_state.last_cmd = cmd
+                if not result.ok:
+                    st.error(result.error or "Mind palace query failed.")
+                else:
+                    payload = result.payload if isinstance(result.payload, dict) else {}
+                    answer_text = str(payload.get("answer", ""))
+                    if answer_text:
+                        st.markdown("#### Answer")
+                        st.markdown(answer_text)
+                    llm_meta = payload.get("llm", {})
+                    if isinstance(llm_meta, dict) and llm_meta.get("enabled"):
+                        if llm_meta.get("used"):
+                            st.success(f"LLM answer generated ({llm_meta.get('model')}).")
+                        else:
+                            st.warning(
+                                "LLM was enabled but fallback heuristic answer was used: "
+                                + str(llm_meta.get("error", "unknown reason"))
+                            )
+                    rows = payload.get("evidence", [])
+                    citations_md = str(payload.get("citations_markdown", "")).strip()
+                    if citations_md and "### Evidence" not in answer_text:
+                        st.markdown(citations_md)
+                    if isinstance(rows, list) and rows:
+                        st.markdown("#### Evidence")
+                        for idx, row in enumerate(rows, start=1):
+                            st.markdown(
+                                f"**#{idx}** sec={row.get('video_second')} "
+                                f"label={row.get('label')} color={row.get('detected_color')} "
+                                f"context={row.get('context')}"
+                            )
+                            frame_path = str(row.get("frame_path", "")).strip()
+                            thumb_path = str(row.get("thumbnail_path", "")).strip()
+                            c1, c2 = st.columns(2)
+                            if frame_path and Path(frame_path).exists():
+                                c1.image(frame_path, caption="frame", use_container_width=True)
+                            if thumb_path and Path(thumb_path).exists():
+                                c2.image(thumb_path, caption="thumbnail", use_container_width=False, width=180)
 
 
 if __name__ == "__main__":

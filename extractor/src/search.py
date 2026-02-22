@@ -8,6 +8,7 @@ from typing import Any
 import cv2
 
 from .color_utils import classify_bgr_image_color
+from .llm_reasoner import synthesize_answer
 
 
 DEFAULT_LABEL_ALIASES = {
@@ -82,6 +83,10 @@ def resolve_memory_path(out_root: Path, video_path: Path) -> Path:
     return out_root / "memory" / f"{video_path.stem}.events.jsonl"
 
 
+def resolve_frames_path(out_root: Path, video_path: Path) -> Path:
+    return out_root / "memory" / f"{video_path.stem}.frames.jsonl"
+
+
 def load_events(memory_path: Path) -> list[dict[str, Any]]:
     if not memory_path.exists():
         raise FileNotFoundError(f"Memory file not found: {memory_path}")
@@ -99,6 +104,25 @@ def load_events(memory_path: Path) -> list[dict[str, Any]]:
             if isinstance(item, dict):
                 events.append(item)
     return events
+
+
+def load_frame_records(frame_memory_path: Path) -> list[dict[str, Any]]:
+    if not frame_memory_path.exists():
+        return []
+
+    rows: list[dict[str, Any]] = []
+    with frame_memory_path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict):
+                rows.append(item)
+    return rows
 
 
 def _normalize_spaces(text: str) -> str:
@@ -230,9 +254,19 @@ def _event_thumbnail_color(
         cache[thumb] = None
         return None
 
-    color = _classify_bgr_image_color(image)
+    color = classify_bgr_image_color(image)
     cache[thumb] = color
     return color
+
+
+def _tokenize_query(text: str) -> set[str]:
+    cleaned = _normalize_spaces(text)
+    tokens = [t for t in re.split(r"[^a-z0-9]+", cleaned) if t]
+    return {
+        t
+        for t in tokens
+        if t not in QUERY_STOPWORDS and len(t) >= 2
+    }
 
 
 def _infer_label_from_events(
@@ -612,3 +646,146 @@ def available_instances(
         if str(ev.get("instance_id", "")).strip()
     }
     return sorted(instances)
+
+
+def ask_memory(
+    events: list[dict[str, Any]],
+    frame_records: list[dict[str, Any]],
+    question: str,
+    limit: int = 5,
+    aliases: dict[str, str] | None = None,
+    use_llm: bool = False,
+    llm_model: str | None = None,
+    llm_base_url: str | None = None,
+    llm_api_key: str | None = None,
+) -> dict[str, Any]:
+    if limit <= 0:
+        limit = 5
+
+    q_tokens = _tokenize_query(question)
+    if not q_tokens:
+        q_tokens = _tokenize_query(normalize_query_label(question, aliases=aliases))
+
+    frame_by_id: dict[str, dict[str, Any]] = {}
+    for fr in frame_records:
+        fid = str(fr.get("frame_id", "")).strip()
+        if fid:
+            frame_by_id[fid] = fr
+
+    evidence: list[dict[str, Any]] = []
+    for ev in events:
+        label = canonicalize_label(str(ev.get("label", "")), aliases=aliases)
+        context = str(ev.get("context", ""))
+        color = str(ev.get("detected_color", ""))
+        relation = str(ev.get("relation", ""))
+        anchor = str(ev.get("anchor_label", ""))
+        blob = f"{label} {context} {color} {relation} {anchor}"
+        tokens = _tokenize_query(blob)
+        overlap = len(tokens.intersection(q_tokens)) if q_tokens else 0
+        # Bias towards more recent events.
+        recency = _event_second(ev)
+        score = (overlap, recency)
+        if overlap <= 0:
+            continue
+
+        frame_id = str(ev.get("frame_id", "")).strip()
+        frame = frame_by_id.get(frame_id, {})
+        evidence.append(
+            {
+                "score": score,
+                "video_second": _event_second(ev),
+                "video_time_s": ev.get("video_time_s"),
+                "label": label,
+                "detected_color": ev.get("detected_color"),
+                "context": context,
+                "confidence": ev.get("confidence"),
+                "thumbnail_path": ev.get("thumbnail_path"),
+                "frame_path": frame.get("frame_path"),
+                "frame_id": frame_id or frame.get("frame_id"),
+                "instance_id": ev.get("instance_id"),
+            }
+        )
+
+    evidence = sorted(evidence, key=lambda x: x["score"], reverse=True)[:limit]
+
+    def _evidence_citations_markdown(rows: list[dict[str, Any]], max_rows: int = 3) -> str:
+        lines: list[str] = ["### Evidence"]
+        for idx, ev in enumerate(rows[:max_rows], start=1):
+            sec = ev.get("video_second")
+            label = ev.get("label")
+            color = ev.get("detected_color") or "unknown"
+            ctx = ev.get("context")
+            conf = ev.get("confidence")
+            frame_path = str(ev.get("frame_path") or "").strip()
+            thumb_path = str(ev.get("thumbnail_path") or "").strip()
+            parts = [
+                f"- [E{idx}] second `{sec}`",
+                f"`{label}`",
+                f"color `{color}`",
+                f"context `{ctx}`",
+                f"confidence `{conf}`",
+            ]
+            links: list[str] = []
+            if frame_path:
+                links.append(f"[frame]({frame_path})")
+            if thumb_path:
+                links.append(f"[thumbnail]({thumb_path})")
+            if links:
+                parts.append(" | " + " ".join(links))
+            lines.append(", ".join(parts))
+        return "\n".join(lines)
+
+    if not evidence:
+        return {
+            "found": False,
+            "query": question,
+            "answer": "I couldn't find strong evidence for that in memory yet.",
+            "evidence": [],
+            "citations_markdown": "",
+        }
+
+    lines = []
+    for idx, ev in enumerate(evidence[:3], start=1):
+        sec = ev.get("video_second")
+        label = ev.get("label")
+        ctx = ev.get("context")
+        color = ev.get("detected_color") or "unknown"
+        lines.append(f"{idx}) second {sec}: {label} ({color}) in context '{ctx}'")
+
+    answer = "Best evidence from memory:\n" + "\n".join(lines)
+    citations_markdown = _evidence_citations_markdown(evidence, max_rows=min(5, limit))
+    llm_meta: dict[str, Any] = {"enabled": use_llm, "used": False}
+    if use_llm:
+        llm_result = synthesize_answer(
+            question=question,
+            evidence=evidence,
+            model=llm_model,
+            base_url=llm_base_url,
+            api_key=llm_api_key,
+        )
+        if llm_result.get("ok"):
+            answer = str(llm_result.get("answer", answer))
+            # Keep judge-facing traceability with explicit evidence citations.
+            if citations_markdown:
+                answer = f"{answer}\n\n{citations_markdown}"
+            llm_meta = {
+                "enabled": True,
+                "used": True,
+                "model": llm_result.get("model"),
+                "base_url": llm_result.get("base_url"),
+            }
+        else:
+            llm_meta = {
+                "enabled": True,
+                "used": False,
+                "error": llm_result.get("error"),
+            }
+
+    return {
+        "found": True,
+        "query": question,
+        "answer": answer,
+        "evidence": evidence,
+        "citations_markdown": citations_markdown,
+        "llm": llm_meta,
+    }

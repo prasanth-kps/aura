@@ -13,7 +13,16 @@ from .anchors import ANCHOR_CLASSES
 from .color_utils import detect_color_from_image_path
 from .detector_qaihub import QualcommYoloDetector
 from .geometry import box_iou, center_distance, choose_anchor, relation_to_anchor
-from .storage import append_event, prepare_output_paths, slugify, write_thumbnail
+from .storage import (
+    append_event,
+    append_frame_record,
+    prepare_output_paths,
+    resolve_frame_memory_path,
+    resolve_frames_dir,
+    slugify,
+    write_frame_image,
+    write_thumbnail,
+)
 
 
 @dataclass
@@ -36,6 +45,9 @@ class IngestOptions:
     track_iou_threshold: float = 0.20
     track_center_dist_ratio: float = 0.12
     runtime: str = "auto"  # auto -> qnn if available, else cpu
+    save_full_frames: bool = True
+    frame_max_width: int = 960
+    frame_jpeg_quality: int = 70
 
 
 @dataclass
@@ -161,6 +173,8 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
 
     video_id = opts.video_path.stem
     crops_dir, memory_path = prepare_output_paths(opts.out_root, video_id)
+    frames_dir = resolve_frames_dir(opts.out_root, video_id)
+    frame_memory_path = resolve_frame_memory_path(opts.out_root, video_id)
 
     if opts.reset_output:
         # Clean prior outputs for deterministic reruns.
@@ -171,8 +185,16 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
                 crop_file.unlink()
             except OSError:
                 pass
+        for frame_file in frames_dir.glob("*.jpg"):
+            try:
+                frame_file.unlink()
+            except OSError:
+                pass
+        if frame_memory_path.exists():
+            frame_memory_path.unlink()
         # Recreate empty log file after cleanup.
         memory_path.touch(exist_ok=True)
+        frame_memory_path.touch(exist_ok=True)
 
     detector = QualcommYoloDetector(
         prefer_model=opts.prefer_model,
@@ -198,6 +220,7 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
     frame_idx = 0
     processed_seconds = 0
     event_count = 0
+    frame_count = 0
     tracks: dict[str, list[TrackState]] = {}
     instance_counters: dict[str, int] = {}
     ingestion_run_id = _build_ingestion_run_id(video_id)
@@ -226,6 +249,39 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
             processed_seconds += 1
 
             detections = detector.predict(frame)
+
+            # Persist a compact full-frame memory record for open-ended retrieval.
+            if opts.save_full_frames:
+                frame_name = f"f{frame_count:06d}_s{second:06d}.jpg"
+                frame_path = frames_dir / frame_name
+                saved_frame = write_frame_image(
+                    frame_bgr=frame,
+                    out_path=frame_path,
+                    max_width=opts.frame_max_width,
+                    jpeg_quality=opts.frame_jpeg_quality,
+                )
+                if saved_frame:
+                    top_labels = sorted(
+                        {
+                            str(d.label).strip().lower()
+                            for d in detections
+                            if str(d.label).strip()
+                        }
+                    )
+                    frame_record = {
+                        "video_id": video_id,
+                        "ingestion_run_id": ingestion_run_id,
+                        "frame_id": f"{video_id}:{frame_count:06d}",
+                        "frame_index": frame_count,
+                        "video_second": second,
+                        "video_time_s": round(frame_time_s, 3),
+                        "detector_model": detector.model_name,
+                        "detector_backend": detector.backend,
+                        "labels": top_labels,
+                        "frame_path": str(frame_path),
+                    }
+                    append_frame_record(frame_memory_path, frame_record)
+            frame_count += 1
 
             if opts.include_labels:
                 detections = [d for d in detections if d.label in opts.include_labels]
@@ -276,7 +332,9 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
                 event = {
                     "video_id": video_id,
                     "ingestion_run_id": ingestion_run_id,
+                    "frame_id": f"{video_id}:{frame_count - 1:06d}",
                     "video_second": second,
+                    "video_time_s": round(frame_time_s, 3),
                     "ingested_at_utc": datetime.now(timezone.utc).isoformat(),
                     "detector_model": detector.model_name,
                     "instance_id": instance_id,
@@ -304,6 +362,7 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
         "sample_fps": opts.sample_fps,
         "detector_input_size": opts.detector_input_size,
         "events_written": event_count,
+        "frames_written": frame_count if opts.save_full_frames else 0,
         "detector_backend": detector.backend,
         "detector_model": detector.model_name,
     }
