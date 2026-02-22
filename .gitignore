@@ -1,0 +1,11 @@
+# FaceRecon
+/FaceRecon/__pycache__/
+/FaceRecon/.venv/
+/FaceRecon/embeddings_db.npz
+/FaceRecon/videoplayback.txt
+/FaceRecon/whisper_onnx_hf/
+/FaceRecon/whisper_npu_model/
+*.onnx
+/FaceRecon/ffmpeg-master-latest-win64-gpl/
+/FaceRecon/ffmpeg.exe
+/FaceRecon/ffmpeg.zip
