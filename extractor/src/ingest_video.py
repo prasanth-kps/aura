@@ -20,8 +20,10 @@ class IngestOptions:
     video_path: Path
     out_root: Path = Path("data")
     prefer_model: str = "yolov11"  # yolov11 -> fallback yolov8
-    conf_threshold: float = 0.45
+    conf_threshold: float = 0.25
     iou_threshold: float = 0.60
+    sample_fps: float = 3.0
+    detector_input_size: int = 960
     thumb_size: int = 50
     crop_padding: int = 8
     jpeg_quality: int = 75
@@ -32,6 +34,7 @@ class IngestOptions:
     track_max_gap_seconds: int = 3
     track_iou_threshold: float = 0.20
     track_center_dist_ratio: float = 0.12
+    runtime: str = "auto"  # auto -> qnn if available, else cpu
 
 
 @dataclass
@@ -174,6 +177,8 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
         prefer_model=opts.prefer_model,
         conf_threshold=opts.conf_threshold,
         iou_threshold=opts.iou_threshold,
+        runtime=opts.runtime,
+        input_size=opts.detector_input_size,
     )
 
     cap = cv2.VideoCapture(str(opts.video_path))
@@ -184,7 +189,11 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
     if fps <= 0:
         fps = 30.0
 
-    last_second = -1
+    if opts.sample_fps <= 0:
+        raise ValueError("sample_fps must be > 0")
+
+    sample_interval_s = 1.0 / float(opts.sample_fps)
+    next_sample_time_s = 0.0
     frame_idx = 0
     processed_seconds = 0
     event_count = 0
@@ -200,15 +209,19 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
 
             pos_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
             if pos_ms > 0:
-                second = int(pos_ms // 1000)
+                frame_time_s = pos_ms / 1000.0
             else:
-                second = int(frame_idx / fps)
+                frame_time_s = float(frame_idx) / float(fps)
             frame_idx += 1
 
-            # Exactly 1 frame per second.
-            if second == last_second:
+            # Sample at requested FPS (default 3 FPS).
+            if frame_time_s + 1e-6 < next_sample_time_s:
                 continue
-            last_second = second
+            # If decoding jumps forward, catch up sampling schedule.
+            while next_sample_time_s <= frame_time_s:
+                next_sample_time_s += sample_interval_s
+
+            second = int(frame_time_s)
             processed_seconds += 1
 
             detections = detector.predict(frame)
@@ -285,5 +298,9 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
 
     return {
         "processed_seconds": processed_seconds,
+        "sample_fps": opts.sample_fps,
+        "detector_input_size": opts.detector_input_size,
         "events_written": event_count,
+        "detector_backend": detector.backend,
+        "detector_model": detector.model_name,
     }
