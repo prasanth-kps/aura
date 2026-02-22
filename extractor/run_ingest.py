@@ -59,6 +59,23 @@ def main() -> None:
         default=70,
         help="JPEG quality for persisted full-frame snapshots",
     )
+    parser.add_argument(
+        "--caption-frames",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Generate local VLM captions for saved full frames (offline after model download)",
+    )
+    parser.add_argument(
+        "--caption-model",
+        default="nlpconnect/vit-gpt2-image-captioning",
+        help="Local caption model name (transformers image-to-text pipeline)",
+    )
+    parser.add_argument(
+        "--caption-every-n-frames",
+        type=int,
+        default=1,
+        help="Run captioning every N sampled frames (1 = every frame)",
+    )
     parser.add_argument("--thumb-size", type=int, default=50, help="Thumbnail size in pixels")
     parser.add_argument("--crop-padding", type=int, default=8, help="Crop padding around bbox")
     parser.add_argument("--jpeg-quality", type=int, default=75, help="JPEG quality for thumbnails")
@@ -121,6 +138,9 @@ def main() -> None:
         save_full_frames=args.save_full_frames,
         frame_max_width=args.frame_max_width,
         frame_jpeg_quality=args.frame_jpeg_quality,
+        caption_frames=args.caption_frames,
+        caption_model=args.caption_model,
+        caption_every_n_frames=max(1, args.caption_every_n_frames),
         anchor_classes=anchor_labels,
         include_labels=include_labels,
         exclude_labels=exclude_labels,
@@ -136,6 +156,7 @@ def main() -> None:
     print(f"Processed samples: {summary['processed_seconds']} @ {summary.get('sample_fps')} FPS")
     print(f"Events written: {summary['events_written']}")
     print(f"Frames written: {summary.get('frames_written', 0)}")
+    print(f"Captions written: {summary.get('captions_written', 0)}")
     print(f"Detector input size: {summary.get('detector_input_size')}")
     print(f"Detector model/runtime: {summary.get('detector_model')} / {summary.get('detector_backend')}")
     print(

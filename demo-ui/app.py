@@ -64,6 +64,11 @@ def _parse_ingest_summary(stdout: str) -> dict[str, Any]:
                 out["frames_written"] = int(line.split(":", 1)[1].strip())
             except ValueError:
                 pass
+        elif line.startswith("Captions written:"):
+            try:
+                out["captions_written"] = int(line.split(":", 1)[1].strip())
+            except ValueError:
+                pass
         elif line.startswith("Detector input size:"):
             try:
                 out["detector_input_size"] = int(line.split(":", 1)[1].strip())
@@ -448,6 +453,9 @@ def _build_ingest_command(
     save_full_frames: bool,
     frame_max_width: int,
     frame_jpeg_quality: int,
+    caption_frames: bool,
+    caption_model: str,
+    caption_every_n_frames: int,
     thumb_size: int,
     crop_padding: int,
     jpeg_quality: int,
@@ -479,6 +487,10 @@ def _build_ingest_command(
         str(frame_max_width),
         "--frame-jpeg-quality",
         str(frame_jpeg_quality),
+        "--caption-model",
+        caption_model,
+        "--caption-every-n-frames",
+        str(max(1, int(caption_every_n_frames))),
         "--thumb-size",
         str(thumb_size),
         "--crop-padding",
@@ -498,6 +510,10 @@ def _build_ingest_command(
         cmd.append("--save-full-frames")
     else:
         cmd.append("--no-save-full-frames")
+    if caption_frames:
+        cmd.append("--caption-frames")
+    else:
+        cmd.append("--no-caption-frames")
     return cmd
 
 
@@ -513,6 +529,7 @@ def _build_query_command(
     llm_model: str | None = None,
     llm_base_url: str | None = None,
     llm_api_key: str | None = None,
+    strict_evidence: bool = False,
     instance_id: str | None = None,
     limit: int | None = None,
 ) -> list[str]:
@@ -538,6 +555,8 @@ def _build_query_command(
         cmd.extend(["--llm-base-url", llm_base_url])
     if llm_api_key:
         cmd.extend(["--llm-api-key", llm_api_key])
+    if strict_evidence:
+        cmd.append("--strict-evidence")
     if instance_id:
         cmd.extend(["--instance-id", instance_id])
     if limit is not None:
@@ -727,6 +746,24 @@ def main() -> None:
         frame_jpeg_quality = c15.number_input(
             "Frame JPEG quality", min_value=40, max_value=100, value=70, step=1
         )
+        c16, c17 = st.columns(2)
+        caption_frames = c16.checkbox(
+            "Caption frames locally (Video RAG)",
+            value=True,
+            help="Uses local transformers image-caption model. First run downloads weights.",
+        )
+        caption_every_n_frames = c17.number_input(
+            "Caption every N sampled frames",
+            min_value=1,
+            max_value=30,
+            value=1,
+            step=1,
+        )
+        caption_model = st.text_input(
+            "Caption model",
+            value="nlpconnect/vit-gpt2-image-captioning",
+            help="Local HF model id for image-to-text captioning.",
+        )
 
         if st.button("Run ingestion", type="primary", use_container_width=True):
             st.session_state.last_video_path = video_path.strip()
@@ -753,6 +790,9 @@ def main() -> None:
                     save_full_frames=save_full_frames,
                     frame_max_width=int(frame_max_width),
                     frame_jpeg_quality=int(frame_jpeg_quality),
+                    caption_frames=bool(caption_frames),
+                    caption_model=caption_model.strip() or "nlpconnect/vit-gpt2-image-captioning",
+                    caption_every_n_frames=int(caption_every_n_frames),
                     thumb_size=int(thumb_size),
                     crop_padding=int(crop_padding),
                     jpeg_quality=int(jpeg_quality),
@@ -792,10 +832,11 @@ def main() -> None:
                         )
 
                     # Demo-focused performance summary.
-                    s1, s2, s3, s4, s5 = st.columns(5)
+                    s1, s2, s3, s4, s5, s6 = st.columns(6)
                     processed_seconds = summary.get("processed_seconds")
                     events_written = summary.get("events_written")
                     frames_written = summary.get("frames_written")
+                    captions_written = summary.get("captions_written")
                     s1.metric("Runtime backend", f"{model}/{backend}" if model and backend else "-")
                     s2.metric(
                         "Processed samples",
@@ -810,6 +851,10 @@ def main() -> None:
                         str(frames_written) if frames_written is not None else "-",
                     )
                     s5.metric("Ingest wall time (s)", f"{result.elapsed_seconds:.2f}")
+                    s6.metric(
+                        "Captions written",
+                        str(captions_written) if captions_written is not None else "-",
+                    )
 
                     if isinstance(events_written, int) and result.elapsed_seconds > 0:
                         st.caption(
@@ -1043,6 +1088,11 @@ def main() -> None:
             type="password",
             help="If empty, extractor uses AURA_LLM_API_KEY env var.",
         )
+        strict_evidence = st.checkbox(
+            "Strict evidence mode (abstain on weak retrieval)",
+            value=True,
+            help="Prevents nearest-match hallucinations for unsupported open-ended questions.",
+        )
 
         if st.button("Ask memory", type="primary", use_container_width=True):
             problems = _validate_paths(python_exec, extractor_dir)
@@ -1065,6 +1115,7 @@ def main() -> None:
                     llm_model=llm_model.strip() or None,
                     llm_base_url=llm_base_url.strip() or None,
                     llm_api_key=llm_api_key.strip() or None,
+                    strict_evidence=bool(strict_evidence),
                     limit=int(mp_limit),
                 )
                 with st.spinner("Searching memory evidence..."):
@@ -1076,9 +1127,18 @@ def main() -> None:
                 else:
                     payload = result.payload if isinstance(result.payload, dict) else {}
                     answer_text = str(payload.get("answer", ""))
+                    i1, i2, i3 = st.columns(3)
+                    i1.metric("Intent", str(payload.get("intent", "-")))
+                    i2.metric("Confidence", str(payload.get("confidence", "-")))
+                    i3.metric("Primary label", str(payload.get("primary_label", "-")))
                     if answer_text:
                         st.markdown("#### Answer")
-                        st.markdown(answer_text)
+                        if bool(payload.get("abstained")):
+                            st.warning(answer_text)
+                        else:
+                            st.markdown(answer_text)
+                    if bool(payload.get("abstained")) and payload.get("abstain_reason"):
+                        st.caption(f"Abstain reason: {payload.get('abstain_reason')}")
                     llm_meta = payload.get("llm", {})
                     if isinstance(llm_meta, dict) and llm_meta.get("enabled"):
                         if llm_meta.get("used"):
@@ -1087,6 +1147,18 @@ def main() -> None:
                             st.warning(
                                 "LLM was enabled but fallback heuristic answer was used: "
                                 + str(llm_meta.get("error", "unknown reason"))
+                            )
+                    visual_meta = payload.get("visual_reasoner", {})
+                    if isinstance(visual_meta, dict):
+                        model_ready = bool(visual_meta.get("model_ready"))
+                        produced = bool(visual_meta.get("answers_produced"))
+                        if not model_ready:
+                            st.caption(
+                                "Local visual QA model not available yet. Install/download model weights before offline demo."
+                            )
+                        elif not produced:
+                            st.caption(
+                                "Visual QA model is loaded but produced low-confidence answers for this question."
                             )
                     rows = payload.get("evidence", [])
                     citations_md = str(payload.get("citations_markdown", "")).strip()

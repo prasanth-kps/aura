@@ -13,6 +13,7 @@ from .anchors import ANCHOR_CLASSES
 from .color_utils import detect_color_from_image_path
 from .detector_qaihub import QualcommYoloDetector
 from .geometry import box_iou, center_distance, choose_anchor, relation_to_anchor
+from .local_rag import DEFAULT_CAPTION_MODEL, caption_image
 from .storage import (
     append_event,
     append_frame_record,
@@ -48,6 +49,9 @@ class IngestOptions:
     save_full_frames: bool = True
     frame_max_width: int = 960
     frame_jpeg_quality: int = 70
+    caption_frames: bool = True
+    caption_model: str = DEFAULT_CAPTION_MODEL
+    caption_every_n_frames: int = 1
 
 
 @dataclass
@@ -221,6 +225,7 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
     processed_seconds = 0
     event_count = 0
     frame_count = 0
+    caption_count = 0
     tracks: dict[str, list[TrackState]] = {}
     instance_counters: dict[str, int] = {}
     ingestion_run_id = _build_ingestion_run_id(video_id)
@@ -268,6 +273,28 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
                             if str(d.label).strip()
                         }
                     )
+                    anchor_labels = sorted(
+                        {
+                            str(d.label).strip().lower()
+                            for d in detections
+                            if str(d.label).strip().lower() in opts.anchor_classes
+                        }
+                    )
+                    summary_parts: list[str] = []
+                    if top_labels:
+                        summary_parts.append(f"objects: {', '.join(top_labels[:10])}")
+                    if anchor_labels:
+                        summary_parts.append(f"anchors: {', '.join(anchor_labels[:6])}")
+                    summary_text = "; ".join(summary_parts) if summary_parts else "objects: none"
+                    caption_text: str | None = None
+                    if opts.caption_frames and opts.caption_every_n_frames > 0:
+                        if (frame_count % max(1, opts.caption_every_n_frames)) == 0:
+                            caption_text = caption_image(
+                                image_path=str(frame_path),
+                                model_name=opts.caption_model,
+                            )
+                            if caption_text:
+                                caption_count += 1
                     frame_record = {
                         "video_id": video_id,
                         "ingestion_run_id": ingestion_run_id,
@@ -278,6 +305,8 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
                         "detector_model": detector.model_name,
                         "detector_backend": detector.backend,
                         "labels": top_labels,
+                        "summary_text": summary_text,
+                        "caption_text": caption_text,
                         "frame_path": str(frame_path),
                     }
                     append_frame_record(frame_memory_path, frame_record)
@@ -363,6 +392,7 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
         "detector_input_size": opts.detector_input_size,
         "events_written": event_count,
         "frames_written": frame_count if opts.save_full_frames else 0,
+        "captions_written": caption_count,
         "detector_backend": detector.backend,
         "detector_model": detector.model_name,
     }

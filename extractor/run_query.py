@@ -98,6 +98,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_ask.add_argument("--llm-model", default=None, help="Optional LLM model name")
     p_ask.add_argument("--llm-base-url", default=None, help="Optional OpenAI-compatible base URL")
     p_ask.add_argument("--llm-api-key", default=None, help="Optional API key (overrides env)")
+    p_ask.add_argument(
+        "--strict-evidence",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Abstain for open-ended questions when retrieval evidence is weak.",
+    )
 
     subparsers.add_parser("labels", help="List detected labels in memory log")
     p_instances = subparsers.add_parser("instances", help="List instance IDs")
@@ -176,10 +182,17 @@ def main() -> None:
             llm_model=args.llm_model,
             llm_base_url=args.llm_base_url,
             llm_api_key=args.llm_api_key,
+            strict_evidence=args.strict_evidence,
         )
         if args.json:
             print(json.dumps(result, indent=2))
             return
+        intent = str(result.get("intent", "")).strip()
+        confidence = str(result.get("confidence", "")).strip()
+        if intent:
+            print(f"intent: {intent}")
+        if confidence:
+            print(f"confidence: {confidence}")
         print(result["answer"])
         citations_md = str(result.get("citations_markdown", "")).strip()
         if citations_md and "### Evidence" not in str(result.get("answer", "")):
