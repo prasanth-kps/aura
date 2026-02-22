@@ -40,6 +40,20 @@ COLOR_TOKEN_ALIASES = {
 }
 
 QUERY_STOPWORDS = {
+    "i",
+    "me",
+    "did",
+    "do",
+    "does",
+    "where",
+    "is",
+    "are",
+    "was",
+    "were",
+    "see",
+    "seen",
+    "last",
+    "latest",
     "my",
     "the",
     "a",
@@ -50,6 +64,9 @@ QUERY_STOPWORDS = {
     "object",
     "item",
 }
+
+LOW_CONFIDENCE_THRESHOLD = 0.55
+RECENT_SECONDS_WINDOW = 10
 
 
 def resolve_memory_path(out_root: Path, video_path: Path) -> Path:
@@ -103,9 +120,16 @@ def parse_query_intent(
     # Handle natural query forms.
     cleaned = re.sub(r"^where\s+is\s+(my|the)\s+", "", cleaned)
     cleaned = re.sub(r"^where\s+are\s+(my|the)\s+", "", cleaned)
+    cleaned = re.sub(r"^where\s+was\s+(my|the)\s+", "", cleaned)
+    cleaned = re.sub(r"^where\s+were\s+(my|the)\s+", "", cleaned)
+    cleaned = re.sub(r"^where\s+did\s+i\s+last\s+see\s+(my|the)\s+", "", cleaned)
+    cleaned = re.sub(r"^where\s+did\s+i\s+see\s+(my|the)\s+", "", cleaned)
+    cleaned = re.sub(r"^where\s+did\s+we\s+last\s+see\s+(my|the)\s+", "", cleaned)
+    cleaned = re.sub(r"^where\s+did\s+we\s+see\s+(my|the)\s+", "", cleaned)
     cleaned = re.sub(r"^find\s+(my|the)\s+", "", cleaned)
     cleaned = re.sub(r"^show\s+me\s+(my|the)\s+", "", cleaned)
     cleaned = re.sub(r"^latest\s+(my|the)\s+", "", cleaned)
+    cleaned = re.sub(r"^last\s+seen\s+(my|the)\s+", "", cleaned)
     cleaned = cleaned.strip()
 
     tokens = [t for t in cleaned.split(" ") if t]
@@ -158,6 +182,14 @@ def _event_second(event: dict[str, Any]) -> int:
         return int(value)
     except (TypeError, ValueError):
         return -1
+
+
+def _event_confidence(event: dict[str, Any]) -> float:
+    value = event.get("confidence", 0.0)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _sorted_recent(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -432,28 +464,24 @@ def where_is(
     instance_id: str | None = None,
     aliases: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    color_cache: dict[str, str | None] = {}
     target_label, target_color, resolved_instance, matches = _resolve_query_events(
         events=events,
         label_or_query=label_or_query,
         instance_id=instance_id,
+        color_cache=color_cache,
         aliases=aliases,
     )
     latest_event = matches[0] if matches else None
 
     if latest_event is None:
-        qualifier_parts = []
-        if instance_id:
-            qualifier_parts.append(f"instance {instance_id}")
-        if target_color:
-            qualifier_parts.append(f"color {target_color}")
-        qualifier = f" ({', '.join(qualifier_parts)})" if qualifier_parts else ""
         return {
             "found": False,
             "query": label_or_query,
             "canonical_label": target_label,
             "target_color": target_color,
             "resolved_instance_id": resolved_instance,
-            "answer": f"I couldn't find '{target_label}'{qualifier} in memory yet.",
+            "answer": "I haven't seen it yet.",
             "event": None,
         }
 
@@ -467,6 +495,47 @@ def where_is(
         answer = f"Last seen at second {second}: {target_label} is {relation} {anchor_label}."
     else:
         answer = f"Last seen at second {second}: {target_label} is {context}."
+
+    event_color = _event_thumbnail_color(latest_event, color_cache=color_cache)
+    if target_color and event_color != target_color:
+        answer = (
+            f"I couldn't find a recent {target_color} {target_label}, "
+            f"but the latest {target_label} is at second {second}: {context}."
+        )
+        if event_color:
+            answer = f"{answer} (detected color: {event_color})"
+        if event_instance:
+            answer = f"{answer} (instance_id: {event_instance})"
+        return {
+            "found": True,
+            "query": label_or_query,
+            "canonical_label": target_label,
+            "target_color": target_color,
+            "resolved_instance_id": resolved_instance or event_instance,
+            "answer": answer,
+            "event": latest_event,
+        }
+
+    latest_global_second = max((_event_second(ev) for ev in events), default=-1)
+    is_recent = (
+        second >= 0
+        and latest_global_second >= 0
+        and (latest_global_second - second) <= RECENT_SECONDS_WINDOW
+    )
+    confidence = _event_confidence(latest_event)
+    if is_recent and confidence < LOW_CONFIDENCE_THRESHOLD:
+        answer = f"Most likely near {context} (low confidence: {confidence:.2f})."
+        if event_instance:
+            answer = f"{answer} (instance_id: {event_instance})"
+        return {
+            "found": True,
+            "query": label_or_query,
+            "canonical_label": target_label,
+            "target_color": target_color,
+            "resolved_instance_id": resolved_instance or event_instance,
+            "answer": answer,
+            "event": latest_event,
+        }
 
     if target_color:
         answer = f"{answer} (matched color: {target_color})"

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 import cv2
 
@@ -42,10 +43,15 @@ class TrackState:
     hit_count: int = 1
 
 
-def _new_instance_id(label: str, counters: dict[str, int]) -> str:
+def _build_ingestion_run_id(video_id: str) -> str:
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"{slugify(video_id)}-{ts}-{uuid4().hex[:8]}"
+
+
+def _new_instance_id(label: str, counters: dict[str, int], run_id: str) -> str:
     idx = counters.get(label, 0) + 1
     counters[label] = idx
-    return f"{slugify(label)}_{idx:03d}"
+    return f"{run_id}:{slugify(label)}_{idx:03d}"
 
 
 def _prune_stale_tracks(
@@ -101,6 +107,7 @@ def _assign_instance_ids(
     mobile_items: list,
     tracks: dict[str, list[TrackState]],
     counters: dict[str, int],
+    run_id: str,
     second: int,
     frame_diag: float,
     opts: IngestOptions,
@@ -123,7 +130,7 @@ def _assign_instance_ids(
         )
 
         if matched is None:
-            instance_id = _new_instance_id(mobile.label, counters)
+            instance_id = _new_instance_id(mobile.label, counters, run_id=run_id)
             matched = TrackState(
                 instance_id=instance_id,
                 label=mobile.label,
@@ -183,6 +190,7 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
     event_count = 0
     tracks: dict[str, list[TrackState]] = {}
     instance_counters: dict[str, int] = {}
+    ingestion_run_id = _build_ingestion_run_id(video_id)
 
     try:
         while True:
@@ -218,6 +226,7 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
                 mobile_items=mobile_items,
                 tracks=tracks,
                 counters=instance_counters,
+                run_id=ingestion_run_id,
                 second=second,
                 frame_diag=frame_diag,
                 opts=opts,
@@ -251,6 +260,7 @@ def run_video_ingestion(opts: IngestOptions) -> dict[str, int]:
 
                 event = {
                     "video_id": video_id,
+                    "ingestion_run_id": ingestion_run_id,
                     "video_second": second,
                     "ingested_at_utc": datetime.now(timezone.utc).isoformat(),
                     "detector_model": detector.model_name,
