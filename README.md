@@ -1,113 +1,165 @@
+<div align="center">
+
 # Aura
 
-A VR-glasses-style assistant built in Streamlit to provide help from vision and audio clues.
+**An on-device AI assistant for smart glasses — built around vision, voice, and memory.**
 
-Product intention:
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![Qualcomm AI Hub](https://img.shields.io/badge/Qualcomm%20AI%20Hub-NPU--first-3253DC?style=flat-square)](https://aihub.qualcomm.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](https://opensource.org/licenses/MIT)
 
-- Support social awareness (identify people and infer likely names)
-- Surface important context (scene summaries and key details)
-- Build visual memory over time and answer queries from observed data
-- Feel like a real-time assistant for smart/AR glasses experiences
+</div>
 
-Core lenses:
+---
 
-- Face ID Lens (live face detection + recognition)
-- Scene Insight Lens (draw-box image summarization)
-- Find-My-Object Lens (object memory ingest + prompt retrieval)
+## What is Aura?
 
-The app is designed for on-device acceleration with NPU-first behavior where available.
+Aura is a proof-of-concept AI assistant designed for the form factor of smart/AR glasses. It processes video and audio in real time — recognizing faces, understanding scenes, and remembering objects — entirely on-device with no cloud dependency.
 
-## Features
+The project is built as a **unified Streamlit console** that simulates the experience of wearing smart glasses. A single video input feeds into three parallel AI "lenses", each handling a different perceptual task. Hardware acceleration is handled via Qualcomm AI Hub's QNN execution provider, with automatic fallback to CPU.
 
-- Single shared video upload for all lenses
-- Live face stream with overlays and backend status
-- Parallel whisper transcription + name hint extraction
-- Auto-assign unknown faces from transcript/LLM hints
-- Auto-enroll inferred identities into `FaceRecon/embeddings_db.npz`
-- Pause-and-inspect current frame for Scene Insight
-- Memory prompt tab for querying stored object memory
+---
+
+## The Three Lenses
+
+### Face ID Lens
+Identifies people in video frames and matches them against an enrolled face database. When a face can't be matched, the system listens to the audio track — transcribing it via Whisper and feeding the transcript through an LLM to extract likely names. Those names are offered as enrollment suggestions, closing the loop from audio to visual identity.
+
+**Pipeline:** Video frames → Haar cascade detection → CavaFace embedding (NPU) → cosine similarity match → unknown face tracking → Whisper transcription → LLM name extraction → auto-enroll
+
+### Scene Insight Lens
+Let the user draw a rectangle over a paused video frame. The selected region is analysed by a CLIP + BLIP inference engine to produce a structured scene summary: scene type, detected attributes, likely actions, and a natural language caption.
+
+**Modes:** CLIP (fast zero-shot), BLIP (natural language captioning), Hybrid (both combined)
+
+### Find-My-Object Lens
+Ingests a video using a YOLOv11 detector, tracking each object instance across frames. Every detection is stored as a timestamped event in a JSONL memory log, along with a cropped thumbnail and colour classification. The user can then query the memory in plain English — *"where did I last see my blue backpack?"* — and get a grounded answer with a timestamp and spatial context.
+
+**Query engine:** Natural language → label canonicalisation → colour-aware instance resolution → `where_is()` / `timeline()` / `describe_color()` → structured answer
+
+---
+
+## Feature Branch: Mind Palace
+
+> `feature/mind-palace-memory`
+
+Mind Palace extends the Find-My-Object lens with a full **retrieval-augmented generation (RAG)** layer. Instead of keyword-matching against the memory log, it embeds queries and evidence using a sentence-transformer model, retrieves semantically relevant events, and synthesises a grounded narrative answer via an LLM.
+
+New capabilities on this branch:
+- Semantic similarity search over stored events (`local_rag.py`)
+- VIT-GPT2 image captioning and ViLT visual Q&A run against retrieved thumbnails
+- LLM synthesis with grounded evidence bullets (`llm_reasoner.py`)
+- Colour classification refinements for better instance disambiguation
+
+See the [extractor README on that branch](extractor/README.md) for full details.
+
+---
 
 ## Project Layout
 
-- `demo-ui/unified_app.py` - main Streamlit application
-- `FaceRecon/` - face recognition pipeline and embeddings DB
-- `image-summarizer/` - CLIP/BLIP summarization engine
-- `extractor/` - object ingest/query pipeline
-
-## Requirements
-
-Install Python dependencies:
-
-```bash
-py -m pip install -r requirements.txt
+```
+aura/
+├── demo-ui/
+│   ├── unified_app.py      Streamlit app combining all three lenses
+│   └── app.py              Mind Palace standalone UI (feature branch)
+│
+├── FaceRecon/
+│   ├── pipeline.py         Whisper → LLM names → CavaFace pipeline
+│   ├── run_recognition.py  CLI entrypoint
+│   └── ...
+│
+├── image-summarizer/
+│   ├── engine/
+│   │   ├── inference_engine.py   CLIP + BLIP orchestrator
+│   │   ├── clip_summarizer.py    Zero-shot scene classification
+│   │   └── blip_captioner.py     Natural language captioning
+│   └── ...
+│
+├── extractor/
+│   ├── run_ingest.py        Ingest video → memory JSONL
+│   ├── run_query.py         CLI query tool
+│   └── src/
+│       ├── ingest_video.py  YOLO detection + instance tracking
+│       ├── search.py        Query engine (where_is, timeline, etc.)
+│       ├── detector_qaihub.py   YOLOv11/v8 via Qualcomm AI Hub
+│       ├── storage.py       JSONL event log + thumbnail writer
+│       ├── color_utils.py   Dominant colour detection (mind-palace)
+│       ├── local_rag.py     Semantic RAG over memory (mind-palace)
+│       └── llm_reasoner.py  LLM synthesis from evidence (mind-palace)
+│
+└── requirements.txt
 ```
 
-Optional but recommended for better transcription compatibility:
+---
 
-- `ffmpeg` on PATH
+## Getting Started
 
-Optional for LLM name extraction:
+### Prerequisites
 
-- Ollama installed and running
-- Model pulled: `llama3.2:3b`
+- Python 3.10+
+- `ffmpeg` on PATH (recommended for Whisper compatibility)
+- For NPU acceleration: Snapdragon device with `onnxruntime-qnn` installed
+- For LLM name extraction: [Ollama](https://ollama.ai/) running locally, or an OpenAI-compatible API key
 
-## Run
-
-From repo root:
-
-```bash
-py -m streamlit run "c:\Users\hackathon user\Desktop\Project\aura\demo-ui\unified_app.py"
-```
-
-## LLM Setup (Name Extraction)
-
-Install and start Ollama, then pull model:
+### Install
 
 ```bash
-ollama serve
-ollama pull llama3.2:3b
+git clone https://github.com/prasanth-kps/aura.git
+cd aura
+pip install -r requirements.txt
 ```
 
-In app settings use:
+### Run the Unified App
 
-- Provider: `ollama`
-- API Base: `http://localhost:11434`
-- Model: `llama3.2:3b`
+```bash
+streamlit run demo-ui/unified_app.py
+```
 
-## NPU / Backend Notes
+Upload a video using the file picker at the top. Each lens tab operates independently on that video.
 
-- Face model supports `npu`, `auto`, `directml`, `cpu`.
-- If QNN is available, backend should show `npu-qnn` in the app.
-- Terminal logs with `onnxruntime::qnn` indicate QNN/NPU execution.
+---
 
-## Smart Lens Workflow
+## Module Guides
 
-1. Upload one shared video at top.
-2. Start Smart Lens stream (Face + Whisper run in background).
-3. Play audio/video while live inference continues.
-4. Use `Pause & Inspect Current Frame`.
-5. Draw a rectangle to trigger Scene Insight summary.
+| Module | README |
+|---|---|
+| Face ID Lens | [FaceRecon/README.md](FaceRecon/README.md) |
+| Scene Insight Lens | [image-summarizer/README.md](image-summarizer/README.md) |
+| Find-My-Object Lens | [extractor/README.md](extractor/README.md) |
+| Unified UI | [demo-ui/README.md](demo-ui/README.md) |
 
-## Transcript Cache
+---
 
-Whisper transcripts are cached at:
+## Hardware Acceleration
 
-- `%TEMP%\aura_whisper_cache`
+Aura is built with NPU-first execution in mind. All inference pipelines attempt to load models via `QNNExecutionProvider` (Qualcomm Neural Processing SDK) and fall back to CPU automatically. No code changes are needed to switch between hardware targets.
 
-Cache key is based on video content hash. Delete cache file to force re-transcription.
+| Component | NPU Model | Fallback |
+|---|---|---|
+| Face Embedding | CavaFace (ONNX/QNN) | PyTorch CPU |
+| Speech Recognition | Whisper (faster-whisper int8) | CPU |
+| Object Detection | YOLOv11 (QAI Hub) | YOLOv8 CPU |
+| Image Captioning | BLIP (ONNX/QNN) | Transformers CPU |
+| Semantic Search | MiniLM-L6-v2 | CPU |
 
-## Troubleshooting
+---
 
-- No transcript:
-  - ensure video has audio stream
-  - ensure Ollama is running for LLM hints
-  - clear `%TEMP%\aura_whisper_cache` for stale cache cases
-- Canvas not visible:
-  - install `streamlit-drawable-canvas`
-- No NPU activity:
-  - select `Face Accelerator = npu`
-  - confirm backend metric and terminal QNN logs
+## Tech Stack
 
-## Status
+| Layer | Technology |
+|---|---|
+| UI | Streamlit |
+| Face Recognition | CavaFace via Qualcomm AI Hub |
+| Speech-to-Text | faster-whisper (CPU int8) |
+| Object Detection | YOLOv11 / YOLOv8 via QAI Hub |
+| Scene Understanding | CLIP + BLIP (Transformers / Optimum) |
+| Semantic Search | sentence-transformers/all-MiniLM-L6-v2 |
+| LLM Inference | Ollama (local) or OpenAI-compatible API |
+| Acceleration | ONNX Runtime + QNN Execution Provider |
 
-This repository currently focuses on live demo usability and hardware-accelerated inference in Streamlit.
+---
+
+## Built by
+
+[Prasanth KPS](https://github.com/prasanth-kps) · [@prasanth-kps](https://github.com/prasanth-kps)
