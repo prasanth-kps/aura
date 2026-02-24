@@ -1,12 +1,12 @@
-# demo-ui — Unified Streamlit Console
+# demo-ui — Unified Streamlit Console · AURA
 
-The single-page interface that brings all three Aura lenses together.
+The single-page interface that brings all three AURA lenses together.
 
 ---
 
 ## Overview
 
-`unified_app.py` is a Streamlit application that simulates a smart glasses console. One video upload at the top feeds all three AI lenses — Face ID, Scene Insight, and Find-My-Object — each available in its own tab.
+`unified_app.py` is a Streamlit application that simulates a smart glasses console. One video upload at the top feeds all three AURA lenses — Face ID, Scene Insight, and Find-My-Object — each available in its own tab.
 
 State is managed via `st.cache_resource` so that background threads (face stream, Whisper transcription) survive Streamlit script reruns without being torn down.
 

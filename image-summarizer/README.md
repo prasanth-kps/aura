@@ -1,4 +1,4 @@
-# image-summarizer — Scene Insight Lens
+# image-summarizer — Scene Insight Lens · AURA
 
 Region-based scene understanding using CLIP and BLIP. Draw a box over any area of a frame and get a structured description of what's in it.
 

@@ -1,4 +1,4 @@
-# FaceRecon — Face ID Lens
+# FaceRecon — Face ID Lens · AURA
 
 Real-time face recognition that uses speech to identify the people it can't yet recognise.
 

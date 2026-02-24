@@ -1,6 +1,7 @@
 <div align="center">
 
-# Aura
+# AURA
+### Augmented Understanding & Relational Archive
 
 **An on-device AI assistant for smart glasses — built around vision, voice, and memory.**
 
@@ -13,9 +14,9 @@
 
 ---
 
-## What is Aura?
+## What is AURA?
 
-Aura is a proof-of-concept AI assistant designed for the form factor of smart/AR glasses. It processes video and audio in real time — recognizing faces, understanding scenes, and remembering objects — entirely on-device with no cloud dependency.
+AURA (Augmented Understanding & Relational Archive) is a proof-of-concept AI assistant designed for the form factor of smart/AR glasses. It processes video and audio in real time — recognizing faces, understanding scenes, and remembering objects — entirely on-device with no cloud dependency.
 
 The project is built as a **unified Streamlit console** that simulates the experience of wearing smart glasses. A single video input feeds into three parallel AI "lenses", each handling a different perceptual task. Hardware acceleration is handled via Qualcomm AI Hub's QNN execution provider, with automatic fallback to CPU.
 
@@ -133,7 +134,7 @@ Upload a video using the file picker at the top. Each lens tab operates independ
 
 ## Hardware Acceleration
 
-Aura is built with NPU-first execution in mind. All inference pipelines attempt to load models via `QNNExecutionProvider` (Qualcomm Neural Processing SDK) and fall back to CPU automatically. No code changes are needed to switch between hardware targets.
+AURA is built with NPU-first execution in mind. All inference pipelines attempt to load models via `QNNExecutionProvider` (Qualcomm Neural Processing SDK) and fall back to CPU automatically. No code changes are needed to switch between hardware targets.
 
 | Component | NPU Model | Fallback |
 |---|---|---|

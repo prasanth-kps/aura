@@ -1,4 +1,4 @@
-# extractor — Find-My-Object Lens
+# extractor — Find-My-Object Lens · AURA
 
 Ingests video with a YOLO object detector, tracks every object instance across time, and stores a queryable memory log. Ask it in plain English where you last saw something.
 
