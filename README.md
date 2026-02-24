@@ -1,10 +1,11 @@
 <div align="center">
 
-# Aura — Mind Palace
+# AURA — Mind Palace
+### Augmented Understanding & Relational Archive
 
 **Feature branch: `feature/mind-palace-memory`**
 
-*Extends Aura's object memory with semantic retrieval and LLM-synthesised answers.*
+*Extends AURA's object memory with semantic retrieval and LLM-synthesised answers.*
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io/)
@@ -16,7 +17,7 @@
 
 ## What's new on this branch
 
-The base Aura project ([`main`](https://github.com/prasanth-kps/aura)) can track objects across video and answer keyword queries like *"where is my laptop?"*
+The base AURA project ([`main`](https://github.com/prasanth-kps/aura)) can track objects across video and answer keyword queries like *"where is my laptop?"*
 
 Mind Palace replaces the keyword-matching query layer with a full **retrieval-augmented generation (RAG)** pipeline:
 

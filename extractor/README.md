@@ -1,4 +1,4 @@
-# extractor — Find-My-Object Lens + Mind Palace
+# extractor — Find-My-Object Lens + Mind Palace · AURA
 
 This branch extends the base object memory system with a full retrieval-augmented generation (RAG) pipeline. The extractor can now answer open-ended questions about what it has seen — not just "where is X" but "what was I doing when I last had my keys?", synthesised from grounded visual evidence.
 
